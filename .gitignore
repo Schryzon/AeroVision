@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# AeroVision artifacts
+dataset/**/*.jpg
+dataset/**/*.jpeg
+dataset/**/*.png
+models/
+hasil_ekstraksi_1.csv
+fgvc-aircraft/
