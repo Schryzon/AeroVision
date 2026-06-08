@@ -5387,28 +5387,43 @@ class Feature_Extraction:
         gy[1:-1, :] = img[2:, :] - img[:-2, :]
         magnitude = np.sqrt(gx ** 2 + gy ** 2)
         orientation = np.rad2deg(np.arctan2(gy, gx)) % 180
-        n_cells_y = h // pixels_per_cell
-        n_cells_x = w // pixels_per_cell
-        cell_hists = np.zeros((n_cells_y, n_cells_x, orientations), dtype=np.float64)
+
+        ppc = pixels_per_cell
+        n_cells_y = h // ppc
+        n_cells_x = w // ppc
         bin_width = 180.0 / orientations
-        for cy in range(n_cells_y):
-            for cx in range(n_cells_x):
-                y0, x0 = cy * pixels_per_cell, cx * pixels_per_cell
-                mag_cell = magnitude[y0:y0 + pixels_per_cell, x0:x0 + pixels_per_cell]
-                ori_cell = orientation[y0:y0 + pixels_per_cell, x0:x0 + pixels_per_cell]
-                for b in range(orientations):
-                    mask = (ori_cell >= b * bin_width) & (ori_cell < (b + 1) * bin_width)
-                    cell_hists[cy, cx, b] = np.sum(mag_cell[mask])
-        blocks_y = n_cells_y - cells_per_block + 1
-        blocks_x = n_cells_x - cells_per_block + 1
+
+        # vectorized cell histogram: reshape into (n_cells_y, ppc, n_cells_x, ppc)
+        # then transpose to (n_cells_y, n_cells_x, ppc, ppc) and flatten pixels per cell
+        h_crop = n_cells_y * ppc
+        w_crop = n_cells_x * ppc
+        mag_cells = magnitude[:h_crop, :w_crop].reshape(n_cells_y, ppc, n_cells_x, ppc).transpose(0, 2, 1, 3).reshape(n_cells_y, n_cells_x, -1)
+        ori_cells = orientation[:h_crop, :w_crop].reshape(n_cells_y, ppc, n_cells_x, ppc).transpose(0, 2, 1, 3).reshape(n_cells_y, n_cells_x, -1)
+
+        # bin orientations and scatter-accumulate magnitudes via one-hot broadcasting
+        bin_idx = np.clip((ori_cells / bin_width).astype(np.int32), 0, orientations - 1)
+        one_hot = (bin_idx[..., np.newaxis] == np.arange(orientations)).astype(np.float64)
+        cell_hists = np.sum(mag_cells[..., np.newaxis] * one_hot, axis=2)
+
+        # vectorized block normalization
+        cpb = cells_per_block
+        blocks_y = n_cells_y - cpb + 1
+        blocks_x = n_cells_x - cpb + 1
         if blocks_y < 1 or blocks_x < 1:
             return cell_hists.ravel()
-        hog_features = []
-        for by in range(blocks_y):
-            for bx in range(blocks_x):
-                block = cell_hists[by:by + cells_per_block, bx:bx + cells_per_block, :].ravel()
-                hog_features.append(block / (np.sqrt(np.sum(block ** 2) + 1e-6)))
-        return np.concatenate(hog_features)
+
+        block_size = cpb * cpb * orientations
+        blocks = np.zeros((blocks_y, blocks_x, block_size), dtype=np.float64)
+        by_idx = np.arange(blocks_y)[:, None]
+        bx_idx = np.arange(blocks_x)[None, :]
+        for dy in range(cpb):
+            for dx in range(cpb):
+                offset = (dy * cpb + dx) * orientations
+                blocks[:, :, offset:offset + orientations] = cell_hists[by_idx + dy, bx_idx + dx, :]
+
+        norms = np.sqrt(np.sum(blocks ** 2, axis=-1, keepdims=True) + 1e-6)
+        normalized = blocks / norms
+        return normalized.reshape(-1)
 
     @staticmethod
     def lbp(image: ArrayLike, radius: int = 1, n_points: int = 8) -> ArrayLike:

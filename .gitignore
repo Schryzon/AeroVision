@@ -224,3 +224,4 @@ dataset/**/*.png
 models/
 hasil_ekstraksi*.csv
 fgvc-aircraft/
+scratch/
