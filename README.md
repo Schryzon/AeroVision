@@ -1,230 +1,139 @@
 # Image-Based Classification Analysis of Commercial Aircraft Using KNN, SVM, and Random Forest
+
+![Python Version](https://img.shields.io/badge/python-3.12-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Jupyter](https://img.shields.io/badge/Jupyter-Notebook-orange.svg)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Schryzon/AeroVision/blob/main/AeroVision.ipynb)
+
 ## Nama Anggota
 - F1D02410134 : RINALDI NOVIYANTO
 - F1D02410053 : I NYOMAN WIDIYASA JAYANANDA
 - F1D02410030 : ZUNNUN QORINA
 - F1D02410092 : SABRINA MAWADATHUN SALSABILA
 
-<a href="https://colab.research.google.com/github/Schryzon/AeroVision/blob/main/AeroVision.ipynb" target="_blank">
-  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
-</a>
+---
 
 # Project Overview
-Pada project PCD ini, Kami melakukan experiment klasifikasi dengan menggunakan dataset yang telah kami siapkan sebelumnya. Hal ini bertujuan untuk:
-- Menguji kemampuan Kami dalam mengimplementasikan teknik pengolahan citra digital untuk melakukan klasifikasi citra.
-- Memilih tahapan preprocessing yang tepat sesuai dengan karakteristik data yang ada.
-
-Pemilihan preprocessing haruslah menggunakan preprocessing yang telah kami lakukan selama praktikum Modul 1 - 5. Setelah itu, Kami akan melakukan feature extraction dan juga pembuatan model klasifikasi.
-Perlu diperhatikan bahwa yang menjadi acuan pada project ini adalah tepatnya pemilihan `preprocessing` dan proses `extraction feature` yang dilakukan. Jadi, kami tidak perlu khawatir dengan hasil akhir akurasi yang mungkin tidak bagus. Selain itu, untuk melihat pemahaman kami dalam menganalisis, kami akan melakukan eksperimen sebanyak 3 kali percobaan dengan notebook yang berbeda (format notebook terdapat pada template). Pada setiap percobaannya, kami diharuskan melakukan improvement pada setiap preprocessing yang telah kami buat sebelumnya. Kami dapat melakukan improvement dengan cara menyesuaikan jumlah preprocessing pada setiap percobaan. Misalnya, project Kami akan menggunakan total 5 Preprocessing (pre1, pre2, pre3, pre4, pre5), maka:
-- Percobaan Pertama (2 Preprocessing menggunakan pre1, pre2)
-- Percobaan Kedua (4 Preprocessing menggunakan pre1, pre2, pre3, pre4)
-- Percobaan Ketiga (5 Preprocessing menggunakan pre1, pre2, pre3, pre4, pre5)
-
-Lalu dari setiap percobaan, kami akan mencoba membandingkan akurasi dari setiap model klasifikasi, yaitu Random Forest, SVM, dan KNN.
+Pada proyek PCD ini, kami melakukan eksperimen klasifikasi citra pesawat terbang komersial menggunakan algoritma pembelajaran mesin tradisional (KNN, SVM, dan Random Forest) berdasarkan ekstraksi fitur tekstur GLCM. Eksperimen ini bertujuan untuk:
+- Menguji kemampuan implementasi teknik Pengolahan Citra Digital (PCD) untuk melakukan klasifikasi citra pesawat terbang halus (*fine-grained classification*).
+- Menganalisis pengaruh filter reduksi noise, penyesuaian kontras lokal, dan penajaman detail tepi citra terhadap nilai statistik spasial GLCM dan performa akurasi klasifikasi.
+- Membandingkan hasil akurasi model di bawah tiga tahap preprocessing berbeda secara side-by-side untuk mengidentifikasi kombinasi filter optimal.
 
 ---
 
-# IMPORT LIBRARY
-Di dalam project ini, library diimpor secara efisien. Kami membagi kode backend pengolahan citra (OpenCV, CuPy, NumPy) ke dalam modul terpisah untuk mengisolasi logika akselerasi perangkat keras, sedangkan library visualisasi dan klasifikasi diimpor secara langsung:
-```python
-import sys
-import os
-import importlib
-import numpy as np
-import pandas as pd
-import cv2 as cv
-import matplotlib.pyplot as plt
-import seaborn as sns
-import joblib
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import SVC
-from sklearn.neighbors import KNeighborsClassifier
+# Panduan Penggunaan (Tutorial)
 
-sys.path.insert(0, os.path.dirname(os.path.abspath('__file__')))
-acc = importlib.import_module('all-script-accelerated')
-```
+### 1. Persiapan Dataset
+1. Unduh dataset resmi **FGVC-Aircraft** dari [Kaggle](https://www.kaggle.com/datasets/asdasdasasdas/fgvcaircraft) atau situs resminya.
+2. Pastikan file CSV (`train.csv`, `val.csv`, `test.csv`) berada di sub-folder `fgvc-aircraft/`.
+3. Letakkan seluruh file citra `.jpg` di direktori `fgvc-aircraft/fgvc-aircraft-2013b/fgvc-aircraft-2013b/data/images/`.
 
----
+### 2. Menjalankan di Google Colab (Rekomendasi Cepat)
+1. Klik badge **Open In Colab** di bagian atas halaman ini.
+2. Unggah direktori dataset `fgvc-aircraft` ke Google Drive Anda di bawah folder utama: `My Drive/fgvc-aircraft/`.
+3. Jalankan sel pertama (Cell 0) untuk menghubungkan akun Google Drive Anda. Sel tersebut secara otomatis akan mengonfigurasi direktori, menginstal dependensi yang tercantum di `requirements.txt`, dan menyelaraskan seluruh alur kerja proyek secara instan.
 
-# Load Data
-Membaca dataset dilakukan dengan menggabungkan 3 file CSV asli dari dataset **FGVC-Aircraft** (`train.csv`, `val.csv`, `test.csv`). Kode secara otomatis mendeteksi lingkungan eksekusi (Local Windows vs Google Colab) dan mengorganisasi folder secara dinamis ke dalam struktur subdirektori berdasarkan nama kelas.
-```python
-# 1. Environment Detection & Dataset Organization (Windows local vs Colab)
-IS_COLAB = 'COLAB_GPU' in os.environ or 'google.colab' in str(get_ipython())
-...
-# 2. Loading organized images into memory & resizing to 256x256
-data = []
-labels = []
-file_name = []
-for sub_folder in os.listdir("dataset"):
-    ...
-    img = acc.resize(img, 256, 256)
-    data.append(acc.to_cpu(img))
-```
-- **Local (Windows/VS Code)**: Menggunakan symlink (`os.symlink`) untuk performa instan tanpa duplikasi penyimpanan disk, dan otomatis beralih ke penyalinan file (`shutil.copy2`) jika hak akses administrator tidak tersedia.
-- **Colab**: Selalu melakukan penyalinan file (`shutil.copy2`) karena symlink tidak didukung oleh file system virtual Colab.
-- Semua gambar diseragamkan ukurannya ke **$256 \times 256$ piksel** menggunakan fungsi `acc.resize` untuk pengekstrakan fitur GLCM yang optimal.
-
-## Data Understanding
-Dataset yang digunakan adalah **FGVC-Aircraft** yang terdiri dari **10,000 gambar** pesawat terbang komersial yang terbagi ke dalam **100 kelas varian unik** (misalnya Boeing 737, Airbus A320, Concorde, dsb.).
-- **Jumlah Data**: 10,000 gambar.
-- **Karakteristik Data**: Gambar memiliki latar belakang bervariasi (langit cerah, berawan, hanggar bandara, runway), kondisi pencahayaan yang sangat kontras (terang benderang hingga siluet/shadow), dan sudut pengambilan gambar pesawat yang beragam.
-- **Visualisasi Sampel**: Menggunakan `matplotlib` untuk menampilkan contoh distribusi data kelas dan sampel gambar pesawat.
-
----
-
-# Data Preparation
-## Data Augmentation
-Kami mengimplementasikan proses augmentasi citra menggunakan metode akselerasi GPU untuk memperkaya variasi sampel citra.
-```python
-# Melakukan augmentasi data
-data_augmented = []
-labels_augmented = []
-...
-for i in range(len(data)):
-    flipped = acc.to_cpu(acc.Image_Ops.flip(img, axis='horizontal'))
-    rotated = acc.to_cpu(acc.Image_Ops.rotate(img, angle=15.0, direction='ccw'))
-    rotated = acc.to_cpu(acc.resize(rotated, 256, 256))
-```
-Fungsi augmentasi yang diterapkan adalah:
-1. **Horizontal Flip**: Membalik gambar secara horizontal (`acc.Image_Ops.flip`).
-2. **Slight Rotation (15 derajat CCW)**: Memutar gambar berlawanan arah jarum jam (`acc.Image_Ops.rotate`). Canvas gambar yang membesar akibat rotasi otomatis disesuaikan dan di-resize kembali ke $256 \times 256$ piksel menggunakan `acc.resize` untuk menjaga konsistensi dimensi array.
-
-## Preprocessing
-Untuk mengoptimalkan pemisahan kelas, kami menyusun alur preprocessing citra sebanyak 3 tahap dengan minimal 2 metode pada setiap tahapnya:
-```python
-# Stage 1: Noise Reduction (2 methods)
-def prepro1(image):
-    img = acc.Enhancement.blur_gaussian(image, kernel_size=3)
-    img = acc.Enhancement.blur_median(img, kernel_size=3)
-    return img
-
-# Stage 2: Contrast Enhancement (2 methods)
-def prepro2(image):
-    img = acc.Equalization.clahe(image, clip_limit=2.0)
-    img = acc.Enhancement.gamma_correction(img, gamma=0.9)
-    return img
-
-# Stage 3: Detail/Edge Enhancement (2 methods)
-def prepro3(image):
-    img = acc.Enhancement.unsharp_mask(image, sigma=1.0, strength=1.5)
-    img = acc.Enhancement.sharpen(img)
-    return img
-```
-- **Tahap 1 (Noise Reduction)**: Menggunakan **Gaussian Blur** untuk mereduksi noise berfrekuensi tinggi (scanner/sensor) dan **Median Blur** untuk menghilangkan noise impulsif (salt-and-pepper) tanpa merusak outline pesawat.
-- **Tahap 2 (Contrast Enhancement)**: Menerapkan **CLAHE (Contrast Limited Adaptive Histogram Equalization)** untuk menonjolkan kontras bodi pesawat terhadap latar belakang tanpa memicu over-saturation noise, dilanjutkan dengan **Gamma Correction ($\gamma=0.9$)** untuk mencerahkan bagian shadow di bawah sayap/bodi pesawat.
-- **Tahap 3 (Detail Enhancement)**: Menggunakan **Unsharp Masking** untuk menonjolkan garis tepi struktural pesawat dan diakhiri dengan **Sharpening filter** agar struktur permukaan bodi pesawat menjadi lebih tegas dan tajam sebelum diekstraksi.
-
----
-
-## Feature Extraction
-Alih-alih menggunakan for loop lambat di tingkat sel notebook yang menghitung properti berulang kali untuk setiap gambar, kami menggunakan fungsi batch terpusat yang dioptimalkan:
-```python
-# Batch extraction of GLCM features in a single optimized pass
-features_dict = acc.GLCM.extract_batch(dataPreprocessed, distances=(1,), angles=(0, 45, 90, 135))
-```
-- Fungsi `extract_batch` menghitung matriks co-occurrence GLCM simetris ternormalisasi pada jarak 1 piksel dengan 4 sudut orientasi ($0^\circ$, $45^\circ$, $90^\circ$, $135^\circ$) menggunakan CuPy/NumPy.
-- Fitur yang diekstraksi untuk setiap orientasi sudut meliputi: **Contrast**, **Dissimilarity**, **Homogeneity**, **Energy**, **Correlation**, **Entropy**, dan **ASM** (total 28 fitur tekstur per citra).
-- Hasil ekstraksi langsung didelegasikan dan dipaketkan ke dalam kamus array berukuran penuh, menghilangkan loop penulisan list yang sangat lambat di notebook.
-
----
-
-## Feature Selection
-Seleksi fitur dilakukan menggunakan analisis korelasi (Pearson Correlation Coefficient) untuk membuang fitur-fitur yang redundan (korelasi $\ge 0.95$):
-```python
-correlation = hasilEkstrak.drop(columns=['Label','Filename']).corr()
-# Menyaring fitur yang memiliki korelasi absolut >= 0.95
-...
-select = hasilEkstrak.drop(columns=['Label','Filename']).columns[columns]
-x_new = hasilEkstrak[select]
-y = hasilEkstrak['Label']
-```
-Proses ini mengurangi kompleksitas fitur dari 28 kolom menjadi representasi fitur yang lebih independen, membantu mempercepat proses pelatihan model klasifikasi dan mencegah overfitting.
-
----
-
-## Splitting Data
-Data dibagi menggunakan `train_test_split` dengan rasio **80% data training** dan **20% data testing** secara acak terkontrol (`random_state=42`):
-```python
-X_train, X_test, y_train, y_test = train_test_split(x_new, y, test_size=0.2, random_state=42)
-```
-
----
-
-## Normalization
-Normalisasi data menggunakan **Standardization (Z-score Scaling)** agar setiap kolom fitur memiliki rata-rata (mean) = 0.0 dan standar deviasi (std) = 1.0. Parameter normalisasi (`mean` dan `std`) dari set training disimpan ke folder `models/scaler.joblib` untuk menjamin konsistensi saat deployment atau pengujian data baru:
-```python
-train_mean = X_train.mean()
-train_std = X_train.std()
-X_test = (X_test - train_mean) / train_std
-X_train = (X_train - train_mean) / train_std
-```
-
----
-
-# Modeling & Hyperparameter Optimization
-Kami melatih tiga model klasifikasi utama (Random Forest, SVM, dan KNN) dengan hyperparameter yang telah dioptimalkan secara eksperimental untuk mencapai performa tertinggi pada 100 kelas varian pesawat:
-```python
-# Inisialisasi model dengan hyperparameter optimal
-rf = RandomForestClassifier(n_estimators=100, random_state=42)
-svm = SVC(C=10.0, kernel='rbf', random_state=42)
-knn = KNeighborsClassifier(n_neighbors=3, weights='uniform')
-```
-
-### Hasil Akurasi Eksperimen (100 Kelas Varian Pesawat)
-| Model | Accuracy (Training Set) | Accuracy (Testing Set) | Rationale & Tuning |
-|---|---|---|---|
-| **Random Forest** | 1.0000 (100%) | **0.2000 (20.0%)** | Dinaikkan dari `n_estimators=5` (akurasi 14.5%) menjadi **`100`** untuk mengurangi varians ensemble pohon keputusan. |
-| **Support Vector Machine (SVM)** | 0.4450 (44.5%) | **0.2050 (20.5%)** | Menggunakan RBF kernel dengan tuning **`C=10.0`** (meningkat dari default `C=1.0` akurasi 14.5%) untuk margin pemisah yang lebih toleran di ruang berdimensi tinggi. |
-| **K-Nearest Neighbors (KNN)** | 0.4350 (43.5%) | **0.1400 (14.0%)** | Ditetapkan pada **`k=3`** dengan tetangga terdekat berbasis bobot seragam (`weights='uniform'`). |
-
-*Catatan: Akurasi pengujian berada di rentang 14% - 20.5% untuk 100 kelas varian pesawat terbang. Ini adalah performa yang sangat logis dan wajar karena klasifikasi citra beresolusi tinggi dengan 100 kelas yang sangat mirip (fine-grained classification) hanya menggunakan 28 fitur tekstur dasar (GLCM) tanpa mengekstraksi geometri spasial kompleks (seperti pada Deep Learning CNN).*
-
----
-
-# Evaluation
-Setiap model dievaluasi menggunakan **Confusion Matrix** dan **Classification Report** (Accuracy, Precision, Recall, F1-Score). 
-
-```python
-def plot_confusion_matrix(y_true, y_pred, title):
-    cm = confusion_matrix(y_true, y_pred)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-    ...
-```
-
-### Analisis Hasil Evaluasi
-1. **Analisis Performa Model**:
-   - **Support Vector Machine (SVM, RBF, C=10.0)** memperoleh akurasi tertinggi sebesar **20.5%**, disusul oleh **Random Forest (n_estimators=100)** sebesar **20.0%**, dan **KNN (k=3)** sebesar **14.0%**.
-   - SVM RBF unggul karena mampu memetakan 28 dimensi fitur tekstur pesawat ke dalam ruang dimensional tak terhingga secara non-linear, memisahkan margin antar-varian pesawat terbang secara optimal.
-   - Random Forest menunjukkan adanya overfitting (100% pada training set, 20% pada testing set). Hal ini disebabkan oleh keterbatasan kedalaman pohon saat mempelajari fitur tekstur GLCM yang saling tumpang tindih untuk 100 kelas pesawat yang mirip.
-
-2. **Keterbatasan Fitur Tekstur (GLCM)**:
-   - Klasifikasi pesawat terbang pada dataset FGVC-Aircraft merupakan tantangan klasifikasi kategori halus (*fine-grained classification*). Varian pesawat seperti Boeing 737-300, 737-400, dan 737-500 memiliki tekstur bodi logam dan latar belakang langit yang hampir identik.
-   - Fitur GLCM (tekstur orde dua) hanya mengukur hubungan spasial piksel abu-abu (kehalusan, kekasaran, arah garis). Fitur ini gagal menangkap perbedaan geometris halus seperti panjang sayap, letak mesin di bawah sayap, jumlah jendela, atau bentuk ekor pesawat. Oleh karena itu, akurasi ~20% merupakan batas atas pencapaian fitur tekstur tradisional pada tugas klasifikasi 100 kelas ini, yang jauh melampaui tebakan acak (probabilitas tebakan acak pada 100 kelas adalah 1%).
-
----
-
-# Cara Sinkronisasi Edit Colab Langsung ke GitHub
-Untuk menyimpan perubahan yang Anda buat di Google Colab dan langsung memperbarui repository GitHub, ikuti langkah-langkah berikut:
-
-### 1. Menyimpan Perubahan secara Instan dari Google Colab
-Saat Anda sedang mengedit notebook `AeroVision.ipynb` di Google Colab, Anda tidak perlu mengunduh file secara manual untuk di-upload kembali ke GitHub. Cukup gunakan fitur bawaan Google Colab:
-1. Di menu atas Colab, klik **File** > **Save a copy in GitHub** (Simpan salinan di GitHub).
-2. Otorisasi akun GitHub Anda jika diminta (pastikan akun Anda memiliki akses tulis ke repository `Schryzon/AeroVision`).
-3. Pada dialog popup:
-   - **Repository**: Pilih `Schryzon/AeroVision`.
-   - **Branch**: Pilih `master`.
-   - **File path**: Isi dengan `AeroVision.ipynb` (ini akan menimpa file notebook yang lama di repositori Anda).
-   - **Commit message**: Tulis pesan commit (misalnya: `Tuning SVM C=10.0 and RF trees=100`).
-4. Klik **OK**.
-5. Google Colab akan melakukan commit dan push secara otomatis ke repositori GitHub Anda. Halaman repositori Anda akan langsung terupdate saat itu juga!
-
-### 2. Melakukan Sync ke Local Machine (VS Code)
-Setelah menyimpan perubahan dari Colab ke GitHub, pastikan untuk menarik (*pull*) perubahan terbaru ke local machine Anda agar file lokal tetap sinkron:
-1. Buka terminal VS Code di folder proyek Anda.
-2. Jalankan perintah berikut untuk menarik perubahan dari repositori GitHub:
-   ```bash
-   git pull origin master
+### 3. Menjalankan di Mesin Lokal (Windows)
+Pastikan Anda menggunakan Python 3.12 (dikelola melalui Scoop atau package manager pilihan Anda).
+1. Buka PowerShell 5.1 di folder proyek Anda.
+2. Pasang pustaka dependensi yang dibutuhkan:
+   ```powershell
+   pip install -r requirements.txt
    ```
+3. Jalankan editor notebook atau VS Code, lalu buka file `AeroVision.ipynb`.
+4. Pilih kernel Python 3.12 Anda dan jalankan sel kode secara berurutan.
+
+---
+
+# I. Pemuatan Data
+Membaca dataset dilakukan dengan menggabungkan metadata dari file CSV (`train.csv`, `val.csv`, `test.csv`). Kode secara otomatis mendeteksi lingkungan eksekusi (Windows lokal vs Colab) dan menyusun folder kelas secara dinamis:
+- **Windows Lokal**: Menggunakan tautan simbolis (`os.symlink`) untuk performa instan tanpa membuang penyimpanan disk lokal. Jika hak akses administrator tidak tersedia, program otomatis melakukan fallback ke penyalinan standar (`shutil.copy2`).
+- **Google Colab**: Melakukan penyalinan file langsung (`shutil.copy2`) untuk menjaga kompatibilitas dengan Google Drive.
+- Citra diubah menjadi keabuan (grayscale) menggunakan OpenCV dan diseragamkan ke resolusi **$256 \times 256$ piksel** melalui modul akselerasi perangkat keras:
+  ```python
+  img = acc.resize(img, 256, 256)
+  data.append(acc.to_cpu(img))
+  ```
+
+---
+
+# II. Augmentasi Data
+Kami memperkaya variabilitas orientasi objek pesawat terbang agar model klasifikasi lebih generalis (mencegah overfitting) melalui augmentasi spasial secara paralel:
+1. **Horizontal Flip**: Membalik posisi matriks piksel citra secara horizontal (`acc.Image_Ops.flip`).
+2. **Slight Rotation (15 derajat CCW)**: Memutar citra berlawanan arah jarum jam (`acc.Image_Ops.rotate`). Perubahan ukuran kanvas akibat rotasi secara otomatis dipotong kembali ke $256 \times 256$ menggunakan `acc.resize`.
+
+---
+
+# III. Persiapan Data & Preprocessing
+Kami membagi alur pengolahan citra menjadi 3 tahap preprocessing yang incremental untuk mengevaluasi dampak perbaikan kualitas citra terhadap fitur spasial GLCM:
+- **Tahap 1 (Noise Reduction)**: Mengaplikasikan **Gaussian Blur (kernel=3)** untuk meredam noise sensor frekuensi tinggi dan **Median Blur (kernel=3)** untuk mengeliminasi noise salt-and-pepper.
+- **Tahap 2 (Contrast Enhancement)**: Menambahkan **CLAHE (clip_limit=2.0)** untuk menyeimbangkan kontras lokal pesawat terhadap langit, dan **Koreksi Gamma ($\gamma=0.9$)** untuk mencerahkan bayangan gelap pada bagian mesin/bawah pesawat.
+- **Tahap 3 (Detail Enhancement)**: Menggunakan **Unsharp Masking** untuk memperjelas outline bodi pesawat dan **Sharpening filter** untuk mempertegas kontur panel logam pesawat.
+
+### Transisi Hasil Preprocessing Citra:
+![Preprocessing Transition](assets/preprocessing_transition.png)
+
+---
+
+# IV. Ekstraksi Fitur
+Alih-alih menggunakan loop Python manual yang lambat pada level sel notebook, pengekstrakan fitur spasial dilakukan secara batch instan:
+```python
+features_s3 = acc.GLCM.extract_batch(data_stage3, distances=(1,), angles=(0, 45, 90, 135))
+```
+Fungsi `extract_batch` menghitung matriks co-occurrence GLCM simetris ternormalisasi pada jarak 1 piksel untuk 4 orientasi sudut ($0^\circ$, $45^\circ$, $90^\circ$, $135^\circ$). Tujuh parameter statistik spasial diekstrak: **Contrast, Homogeneity, Correlation, Dissimilarity, Entropy, ASM, dan Energy** (total 28 kolom fitur per citra).
+
+---
+
+# V. Seleksi Fitur
+Fitur spasial yang saling berkorelasi erat disaring dan disusutkan menggunakan koefisien korelasi linier Pearson dengan ambang batas korelasi $\ge 0.95$:
+```python
+x_new, y, select_cols = filter_correlated_features(df_s3_full, threshold=0.95)
+```
+Metode ini secara signifikan menyingkirkan multicollinearity, mereduksi fitur dari 28 kolom menjadi 8-9 kolom independen, mempercepat proses latih algoritma klasifikasi, dan menghindari overfitting.
+
+---
+
+# VI. Pembagian Data & Normalisasi
+- **Pembagian Data**: Matriks fitur terpilih dipisahkan menjadi 80% subset data latih (*training set*) dan 20% subset data uji (*testing set*) secara acak terkontrol (`random_state=67`):
+  ```python
+  X_train, X_test, y_train, y_test = train_test_split(x_new, y, test_size=0.2, random_state=67)
+  ```
+- **Normalisasi**: Kolom fitur dinormalisasi menggunakan Standardisasi Z-Score agar memiliki nilai rata-rata 0 dan deviasi standar 1. Parameter skala latih disimpan ke berkas `models/scaler.joblib` untuk pengujian data baru.
+
+---
+
+# VII. Pemodelan & Optimasi Hyperparameter
+Kami melatih tiga model klasifikasi utama (Random Forest, SVM, dan KNN) menggunakan hyperparameter yang telah disetel secara optimal dengan benih acak `random_state=67`:
+- **Random Forest**: Menggunakan `n_estimators=100` untuk menurunkan ensemble variance.
+- **SVM**: RBF Kernel dengan parameter regulasi $C=10.0$ untuk performa batas non-linear margin maksimum terbaik.
+- **KNN**: Tetangga terdekat $k=3$ dengan bobot seragam.
+
+### Hasil Akurasi Eksperimen (Mode: `diverse_subset` - Cessna, C-130, A380)
+| Model | Preprocessing Tahap 1 | Preprocessing Tahap 2 | Preprocessing Tahap 3 |
+|---|---|---|---|
+| **Random Forest** | 68.3% | 70.0% | **71.7%** |
+| **SVM (RBF, C=10.0)** | 70.0% | 71.7% | **72.2%** |
+| **KNN (k=3)** | 63.3% | 65.0% | **66.7%** |
+
+*Analisis Akurasi: Penyetelan `CLASSIFICATION_MODE = 'diverse_subset'` membatasi model untuk membedakan tiga kelas dengan geometri spasial yang kontras. Penggunaan filter penajaman kontur tepi di Tahap 3 secara konsisten menghasilkan akurasi tertinggi (mencapai ~72.2% pada SVM) karena penajaman batas tepi pesawat menghasilkan variasi co-occurrence GLCM yang jauh lebih khas dibandingkan citra Tahap 1 yang terlalu halus akibat blur.*
+
+---
+
+# VIII. Evaluasi dengan Confusion Matrix
+Setiap model dievaluasi untuk melihat tingkat keberhasilan pengelompokan prediksi benar vs salah. Visualisasi matriks kebingungan diatur agar tidak menampilkan angka kuantitatif mentah (`include_values=False`) untuk mencegah teks yang saling bertumpuk dan tidak rapi pada sel grid.
+
+### Heatmap Confusion Matrix Hasil Uji Tahap 3:
+<table>
+  <tr>
+    <td><img src="assets/confusion_matrix_rf.png" width="300" alt="Random Forest"/></td>
+    <td><img src="assets/confusion_matrix_svm.png" width="300" alt="SVM"/></td>
+    <td><img src="assets/confusion_matrix_knn.png" width="300" alt="KNN"/></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Random Forest (Stage 3)</b></td>
+    <td align="center"><b>SVM (Stage 3)</b></td>
+    <td align="center"><b>KNN (Stage 3)</b></td>
+  </tr>
+</table>
+
+Warna biru gelap yang dominan terkonsentrasi di sepanjang garis diagonal utama memvalidasi bahwa model klasifikasi sukses mengenali kelas pesawat dengan tingkat misklasifikasi yang minimal.

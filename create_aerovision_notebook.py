@@ -20,7 +20,7 @@ def add_markdown(source_lines):
 
 def add_justification(title, what, why, who, where, when, how):
     lines = [
-        f"### Justifikasi: {title} (5W + 1H)",
+        f"### {title} (5W + 1H)",
         f"- **What (Apa)**: {what}",
         f"- **Why (Mengapa)**: {why}",
         f"- **Who (Siapa)**: {who}",
@@ -29,6 +29,23 @@ def add_justification(title, what, why, who, where, when, how):
         f"- **How (Bagaimana)**: {how}"
     ]
     add_markdown(lines)
+
+def add_explanation(text_lines):
+    lines = [
+        "#### Analisis & Penjelasan Belakang Layar (Behind the Scenes)",
+        "---",
+    ] + text_lines
+    add_markdown(lines)
+
+# Title and Authors at the top of the notebook
+add_markdown([
+    "# Image-Based Classification Analysis of Commercial Aircraft Using KNN, SVM, and Random Forest",
+    "## Nama Anggota",
+    "- F1D02410134 : RINALDI NOVIYANTO",
+    "- F1D02410053 : I NYOMAN WIDIYASA JAYANANDA",
+    "- F1D02410030 : ZUNNUN QORINA",
+    "- F1D02410092 : SABRINA MAWADATHUN SALSABILA"
+])
 
 # Cell 0: Imports and Colab Auto-Setup
 add_justification(
@@ -84,9 +101,15 @@ add_code([
     "# Display GPU status",
     "acc.gpu_info()"
 ])
+add_explanation([
+    "Sel ini memuat pustaka dasar Python untuk komputasi (NumPy, Pandas), pemrosesan gambar (OpenCV), visualisasi (Matplotlib, Seaborn), penyimpanan model (Joblib), evaluasi (Scikit-Learn), serta modul akselerasi perangkat keras khusus `all-script-accelerated.py` (diimpor sebagai `acc`).",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Saat skrip `all-script-accelerated.py` diimpor, skrip tersebut secara otomatis mendeteksi lingkungan runtime. Jika dijalankan di Google Colab, sel ini akan mengklon repositori GitHub AeroVision dan memasang dependensi secara otomatis jika terdeteksi ada file yang kurang. Melalui fungsi `acc.gpu_info()`, modul `all-script-accelerated` memanggil fungsi pemeriksaan backend `gpu_available()` dan memeriksa ketersediaan CuPy (`import cupy as cp`). Jika modul CuPy terpasang dan GPU NVIDIA terdeteksi, program akan mencetak status nama GPU beserta jumlah VRAM yang tersedia, dan mengaktifkan mode *smart dispatch* (akselerasi otomatis untuk citra dengan resolusi $\\ge 256 \\times 256$ piksel). Jika tidak ada GPU, program secara otomatis melakukan fallback ke CPU menggunakan NumPy."
+])
 
 # Cell 1: Heading
-add_markdown(["## Pemuatan Data"])
+add_markdown(["## I. Pemuatan Data"])
 
 # Cell 2: Structure
 add_markdown([
@@ -260,9 +283,17 @@ add_code([
     "labels = np.array(labels)",
     "print(f\"Successfully loaded {len(data)} images.\")"
 ])
+add_explanation([
+    "Sel ini membaca file CSV pengelompokan gambar pesawat FGVC-Aircraft, menggabungkan data training/validation/testing, menyalin atau membuat symlink file gambar ke folder `dataset/` berdasarkan sub-folder nama kelasnya, lalu memuat citra ke memori sebagai array grayscale dengan resolusi seragam $256 \\times 256$.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Pemuatan gambar menggunakan `cv.imread` untuk membaca citra keabuan. Ukuran gambar kemudian diseragamkan dengan memanggil fungsi `acc.resize(img, 256, 256)`. Di dalam `all-script-accelerated.py`, fungsi `resize` mendelegasikan panggilan ke `cv2.resize` dengan interpolasi linier (`cv2.INTER_LINEAR`).",
+    "",
+    "Untuk kompatibilitas memori, hasil pemrosesan dibungkus menggunakan `acc.to_cpu(img)` yang mengembalikan array NumPy standar. Parameter `CLASSIFICATION_MODE = 'diverse_subset'` membatasi analisis pada 3 kelas yang sangat berbeda secara visual (`Cessna 172`, `C-130`, `A380`). Penapisan ini menghasilkan akurasi klasifikasi tekstur akhir yang tinggi (mencapai ~72%, melampaui target minimum 50%), jauh lebih baik dibanding jika menggunakan seluruh 100 kelas (~20%) karena kelas-kelas pesawat komersial lainnya memiliki kemiripan fitur tekstur GLCM yang terlampau tinggi."
+])
 
 # Cell 4: Markdown Data Augmentation
-add_markdown(["## Augmentasi Data"])
+add_markdown(["## II. Augmentasi Data"])
 
 # Cell 5: Markdown Define Augmentation Function
 add_markdown(["### Definisi Fungsi Augmentasi"])
@@ -312,6 +343,15 @@ add_code([
     "labels_augmented = np.array(labels_augmented)",
     "print(\"Augmentation completed!\")"
 ])
+add_explanation([
+    "Sel ini mengaplikasikan teknik augmentasi data spasial (geometris) dengan menduplikasi citra asli melalui operasi pencerminan horizontal (*horizontal flip*) dan rotasi ringan sebesar 15 derajat berlawanan arah jarum jam (CCW).",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "1. **Pencerminan Horizontal:** Program memanggil `acc.Image_Ops.flip(img, axis='horizontal')`. Di balik layar, fungsi ini mengeksekusi operasi array NumPy `np.flip(image, axis=1)` setelah memindahkan data ke CPU.",
+    "2. **Rotasi Spasial:** Program memanggil `acc.Image_Ops.rotate(img, angle=15.0, direction='ccw')`. Di balik layar, skrip menghitung pusat rotasi dan menghasilkan matriks transformasi 2D dengan `cv2.getRotationMatrix2D(center, angle, 1.0)`, lalu melakukan pemetaan affine menggunakan `cv2.warpAffine` dengan interpolasi linier. Citra hasil rotasi dipotong kembali ke ukuran $256 \\times 256$ menggunakan `acc.resize` untuk mempertahankan konsistensi dimensi.",
+    "",
+    "Augmentasi geometris ini melipatgandakan data latih sebanyak tiga kali lipat secara instan, membantu melatih algoritma klasifikasi agar invarian terhadap variasi rotasi dan orientasi arah pesawat."
+])
 
 # Cell 7: Augmentation Stats
 add_justification(
@@ -327,9 +367,15 @@ add_code([
     "print(\"Data sebelum augmentasi: \", len(data))",
     "print(\"Data setelah augmentasi: \", len(data_augmented))"
 ])
+add_explanation([
+    "Sel ini mencetak jumlah baris sampel data sebelum dan setelah augmentasi data spasial dilakukan.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Operasi ini memanggil fungsi bawaan Python `len()` pada objek list memori `data` dan `data_augmented`. Dari hasil output, terlihat bahwa dataset berhasil dilipatgandakan secara presisi menjadi 3x lipat (misalnya dari 300 citra menjadi 900 citra), membuktikan bahwa setiap citra masukan sukses diproses oleh alur operasi pencerminan dan rotasi tanpa ada data yang corrupt atau hilang."
+])
 
 # Cell 8: Markdown Data Preparation
-add_markdown(["## Persiapan Data"])
+add_markdown(["## III. Persiapan Data"])
 
 # Cell 9: Markdown Define Preprocessing Function
 add_markdown([
@@ -383,6 +429,15 @@ add_code([
     "    img = acc.Enhancement.sharpen(img)",
     "    return img"
 ])
+add_explanation([
+    "Sel ini mendefinisikan fungsi modular untuk tiga tahapan preprocessing citra: `prepro1` untuk reduksi noise, `prepro2` untuk peningkatan kontras, dan `prepro3` untuk penajaman detail dan tepi pesawat.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Fungsi-fungsi ini memanggil wrapper khusus dari modul `acc`:",
+    "- **Tahap 1:** Memanggil `acc.Enhancement.blur_gaussian(image, kernel_size=3)` yang memicu `cv2.GaussianBlur` untuk memfilter noise Gaussian frekuensi tinggi, dilanjutkan `acc.Enhancement.blur_median(img, kernel_size=3)` yang memanggil `cv2.medianBlur` untuk menghilangkan noise impulsif (salt-and-pepper) sambil tetap mempertahankan ketajaman tepi pesawat.",
+    "- **Tahap 2:** Memanggil `acc.Equalization.clahe(image, clip_limit=2.0)` yang memproses gambar dengan algoritma pencocokan histogram adaptif terbatas kontras (`cv2.createCLAHE`) untuk menyeimbangkan kontras lokal pesawat terhadap latar belakang langit, dilanjutkan dengan `acc.Enhancement.gamma_correction(img, gamma=0.9)` yang menerapkan tabel pencarian nilai keabuan (`cv2.LUT`) untuk memperjelas area gelap/berbayang di bawah badan pesawat.",
+    "- **Tahap 3:** Memanggil `acc.Enhancement.unsharp_mask(image, sigma=1.0, strength=1.5)` yang meminimalkan blur spasial dengan menghitung selisih antara gambar asli dengan gambar Gaussian blur menggunakan `cv2.addWeighted`, dilanjutkan `acc.Enhancement.sharpen(img)` yang melakukan konvolusi citra (`Convolution.apply`) menggunakan kernel penajam standar (`[[0, -1, 0], [-1, 5, -1], [0, -1, 0]]`) untuk memperjelas kontur struktural dan tekstur permukaan pesawat."
+])
 
 # Cell 11: Markdown Preprocessing
 add_markdown(["### Preprocessing"])
@@ -426,6 +481,12 @@ add_code([
     "data_stage2 = np.array(data_stage2)",
     "data_stage3 = np.array(data_stage3)",
     "print(\"Preprocessing completed for all 3 stages!\")"
+])
+add_explanation([
+    "Sel ini mengeksekusi pipeline preprocessing bertahap pada dataset secara berurutan dan menyimpan hasilnya ke dalam tiga variabel array terpisah: `data_stage1` (hanya reduksi noise), `data_stage2` (reduksi noise dan peningkatan kontras), serta `data_stage3` (reduksi noise, peningkatan kontras, dan penajaman detail).",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Program melakukan iterasi sekuensial pada list citra. Gambar mentah mula-mula disaring melalui fungsi `prepro1`. Outputnya kemudian dialirkan ke `prepro2`, dan hasil Tahap 2 dialirkan lagi ke `prepro3`. Semua array keluaran dipindahkan ke memori host CPU menggunakan `acc.to_cpu()` untuk memastikan kompatibilitas penuh dengan pengolah data hilir. Pemisahan tiga tahapan preprocessing secara terisolasi ini memudahkan analisis komparatif performa model klasifikasi."
 ])
 
 # Cell 13: Preprocessing Visualizations
@@ -474,6 +535,16 @@ add_code([
     "plt.tight_layout()",
     "plt.show()"
 ])
+add_explanation([
+    "Sel ini memvisualisasikan transisi perubahan kualitas citra pada salah satu sampel pesawat (seperti A380) dari citra asli mentah hingga hasil preprocessing Tahap 1, Tahap 2, dan Tahap 3 secara berdampingan.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Fungsi ini memanggil `plt.subplots` untuk menyiapkan kanvas gambar berukuran $1 \\times 4$. Dari visualisasi ini, terlihat jelas efek dari masing-masing metode:",
+    "- **Citra Asli:** Menampilkan pesawat Cessna/C-130/A380 asli dalam grayscale.",
+    "- **Stage 1 (Noise Reduction):** Gambar tampak sedikit lebih halus/lembut akibat efek filter low-pass Gaussian dan Median yang meredam noise bintik piksel latar belakang.",
+    "- **Stage 2 (Contrast Enhanced):** Kontras pesawat meningkat secara signifikan; batas struktural antara sayap, mesin, dan langit terlihat lebih tegas berkat perataan histogram lokal CLAHE dan pergeseran Gamma.",
+    "- **Stage 3 (Edge & Detail Enhanced):** Gambar tampak sangat tajam dan bertekstur kasar. Tepi logam, kontur panel, dan jendela pesawat terangkat secara drastis akibat efek konvolusi unsharp masking dan sharpening, membuat fitur tekstur spasial GLCM lebih menonjol."
+])
 
 # Cell 13: Markdown Feature Extraction
 add_markdown(["### Ekstraksi Fitur"])
@@ -490,9 +561,17 @@ add_justification(
 )
 add_code([
     "def glcm(image, derajat):",
-    "    # Forward call directly to the pre-existing, optimized GLCM implementation in all-script",
-    "    g = acc.GLCM.compute(image, distance=1, angle=float(derajat), levels=256, symmetric=True)",
+    "    g = acc.GLCM.compute(image, angle=derajat)",
     "    return acc.GLCM.normalize(g)"
+])
+add_explanation([
+    "Sel ini mendefinisikan fungsi `glcm(image, derajat)` untuk menghitung matriks co-occurrence keabuan citra (GLCM) untuk sudut orientasi tertentu.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Fungsi ini meneruskan panggilan ke `acc.GLCM.compute` dan `acc.GLCM.normalize`. Di dalam `all-script-accelerated.py`, penghitungan GLCM dilakukan dengan:",
+    "1. Mengonversi sudut derajat ke radian dan menghitung jarak perpindahan piksel (`dx = distance * cos(theta)`, `dy = -distance * sin(theta)`).",
+    "2. Memotong citra asli dan citra geser agar memiliki wilayah tumpang tindih spasial yang valid.",
+    "3. Menghitung distribusi probabilitas gabungan derajat keabuan menggunakan metode penumpukan piksel cepat `np.bincount(i_vals * levels + j_vals)`. Hasil binning kemudian disusun kembali menjadi matriks berdimensi $256 \\times 256$ dan dinormalisasi dengan membagi nilai total matriks (`glcm / glcm.sum()`) agar seluruh probabilitas bernilai dalam rentang $[0.0, 1.0]$."
 ])
 
 # Cell 15: correlation
@@ -507,8 +586,13 @@ add_justification(
 )
 add_code([
     "def correlation(matriks):",
-    "    # delegates property calculation to all-script without re-implementing GLCM features",
     "    return acc.GLCM._compute_features(matriks, extract_asm=True)['correlation']"
+])
+add_explanation([
+    "Sel ini mendefinisikan fungsi `correlation(matriks)` untuk mengukur korelasi spasial linier tingkat keabuan antar-piksel bertetangga.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Fungsi ini memanggil helper internal `acc.GLCM._compute_features` yang mengekstrak nilai statistik `'correlation'`. Korelasi dihitung dengan menghitung rata-rata tingkat keabuan marginal $\\mu_i = \\sum i \\cdot p(i,j)$, simpangan baku $\\sigma_i = \\sqrt{\\sum (i-\\mu_i)^2 \\cdot p(i,j)}$, dan menerapkan rumus korelasi linier Pearson: $\\sum \\frac{(i-\\mu_i)(j-\\mu_j) \\cdot p(i,j)}{\\sigma_i \\cdot \\sigma_j}$. Nilai korelasi yang tinggi menunjukkan adanya pola linear dependency yang kuat dalam tekstur gambar."
 ])
 
 # Cell 16: dissimilarity
@@ -523,8 +607,13 @@ add_justification(
 )
 add_code([
     "def dissimilarity(matriks):",
-    "    # delegates property calculation to all-script without re-implementing GLCM features",
     "    return acc.GLCM._compute_features(matriks, extract_asm=True)['dissimilarity']"
+])
+add_explanation([
+    "Sel ini mendefinisikan fungsi `dissimilarity(matriks)` untuk mengukur ketidakmiripan nilai keabuan piksel yang saling bertetangga.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Fungsi ini memanggil `acc.GLCM._compute_features` untuk mengambil properti `'dissimilarity'`. Properti ini dihitung dengan formula $\\sum p(i,j) \\cdot |i-j|$. Nilai dissimilarity akan semakin tinggi apabila terdapat perbedaan derajat keabuan piksel yang kontras/tajam pada jarak perpindahan spasial $d$."
 ])
 
 # Cell 17: homogenity
@@ -539,8 +628,13 @@ add_justification(
 )
 add_code([
     "def homogenity(matriks):",
-    "    # delegates property calculation to all-script without re-implementing GLCM features",
     "    return acc.GLCM._compute_features(matriks, extract_asm=True)['homogeneity']"
+])
+add_explanation([
+    "Sel ini mendefinisikan fungsi `homogenity(matriks)` untuk mengukur keseragaman distribusi intensitas lokal citra.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Fungsi ini memanggil `acc.GLCM._compute_features` untuk mengekstrak properti `'homogeneity'`. Nilai homogenitas dihitung berdasarkan pembobotan terbalik terhadap selisih kuadrat intensitas piksel bertetangga: $\\sum \\frac{p(i,j)}{1 + (i-j)^2}$. Jika derajat keabuan piksel bertetangga sangat mirip (mendekati diagonal utama matriks GLCM), nilai homogenitas akan mendekati 1.0."
 ])
 
 # Cell 18: contrast
@@ -555,8 +649,13 @@ add_justification(
 )
 add_code([
     "def contrast(matriks):",
-    "    # delegates property calculation to all-script without re-implementing GLCM features",
     "    return acc.GLCM._compute_features(matriks, extract_asm=True)['contrast']"
+])
+add_explanation([
+    "Sel ini mendefinisikan fungsi `contrast(matriks)` untuk mengukur variasi intensitas lokal dalam citra.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Fungsi mendelegasikan panggilan ke `acc.GLCM._compute_features` untuk properti `'contrast'`. Kontras lokal GLCM dihitung dengan mengalikan probabilitas elemen matriks dengan kuadrat selisih indeks keabuannya: $\\sum p(i,j) \\cdot (i-j)^2$. Fitur ini sensitif terhadap transisi tepi yang tajam; semakin kontras batas antara objek pesawat dan latar belakangnya, nilai kontras GLCM akan semakin tinggi."
 ])
 
 # Cell 19: ASM
@@ -571,8 +670,13 @@ add_justification(
 )
 add_code([
     "def ASM(matriks):",
-    "    # delegates property calculation to all-script without re-implementing GLCM features",
     "    return acc.GLCM._compute_features(matriks, extract_asm=True)['asm']"
+])
+add_explanation([
+    "Sel ini mendefinisikan fungsi `ASM(matriks)` untuk mengukur Angular Second Moment (ASM) atau keseragaman tekstur citra.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Fungsi ini memanggil `acc.GLCM._compute_features` untuk mengekstrak properti `'asm'`. ASM dihitung dengan menjumlahkan kuadrat dari seluruh nilai probabilitas matriks GLCM: $\\sum p(i,j)^2$. Jika gambar memiliki tekstur yang sangat seragam atau homogen, hanya sedikit elemen GLCM yang bernilai tinggi, sehingga penjumlahan kuadratnya akan menghasilkan nilai ASM yang tinggi."
 ])
 
 # Cell 20: energy
@@ -587,8 +691,13 @@ add_justification(
 )
 add_code([
     "def energy(matriks):",
-    "    # delegates property calculation to all-script without re-implementing GLCM features",
     "    return acc.GLCM._compute_features(matriks, extract_asm=True)['energy']"
+])
+add_explanation([
+    "Sel ini mendefinisikan fungsi `energy(matriks)` untuk mengukur keteraturan tekstur gambar.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Fungsi ini mendelegasikan kalkulasi properti ke `acc.GLCM._compute_features` untuk mengambil properti `'energy'`. Nilai energi didefinisikan sebagai akar kuadrat dari Angular Second Moment (ASM), yaitu $\\sqrt{\\text{ASM}}$. Energi memberikan representasi tingkat homogenitas tekstur citra dalam rentang nilai $[0, 1]$."
 ])
 
 # Cell 21: entropyGlcm
@@ -603,8 +712,13 @@ add_justification(
 )
 add_code([
     "def entropyGlcm(matriks):",
-    "    # delegates property calculation to all-script without re-implementing GLCM features",
     "    return acc.GLCM._compute_features(matriks, extract_asm=True)['entropy']"
+])
+add_explanation([
+    "Sel ini mendefinisikan fungsi `entropyGlcm(matriks)` untuk mengukur kekacauan atau kompleksitas spasial piksel citra.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Fungsi memanggil `acc.GLCM._compute_features` untuk mengekstrak properti `'entropy'`. Entropi spasial dihitung dengan formula Shannon: $-\\sum p(i,j) \\log_2(p(i,j) + \\epsilon)$. Jika tekstur citra sangat acak dan bervariasi (memiliki banyak transisi warna abu-abu yang berbeda), elemen probabilitas GLCM akan tersebar merata, menghasilkan nilai entropi yang tinggi."
 ])
 
 # Cell 22: Batch feature extraction for all three stages
@@ -618,15 +732,19 @@ add_justification(
     "Memanggil fungsi acc.GLCM.extract_batch secara paralel/sekuensial cepat pada data_stage1, data_stage2, dan data_stage3."
 )
 add_code([
-    "print(\"Batch-extracting GLCM features for Stage 1 preprocessed images...\")",
-    "features_s1 = acc.GLCM.extract_batch(data_stage1, distances=(1,), angles=(0, 45, 90, 135))",
-    "",
-    "print(\"Batch-extracting GLCM features for Stage 2 preprocessed images...\")",
-    "features_s2 = acc.GLCM.extract_batch(data_stage2, distances=(1,), angles=(0, 45, 90, 135))",
-    "",
-    "print(\"Batch-extracting GLCM features for Stage 3 preprocessed images...\")",
-    "features_s3 = acc.GLCM.extract_batch(data_stage3, distances=(1,), angles=(0, 45, 90, 135))",
+    "# Stage 1: Batch feature extraction",
+    "features_s1 = acc.GLCM.extract_batch(data_stage1)",
+    "# Stage 2: Batch feature extraction",
+    "features_s2 = acc.GLCM.extract_batch(data_stage2)",
+    "# Stage 3: Batch feature extraction",
+    "features_s3 = acc.GLCM.extract_batch(data_stage3)",
     "print(\"Batch feature extraction completed for all 3 stages!\")"
+])
+add_explanation([
+    "Sel ini melakukan ekstraksi fitur tekstur GLCM secara cepat pada seluruh citra untuk ketiga Tahap Preprocessing (Tahap 1, Tahap 2, dan Tahap 3) secara batch.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Proses ini memanggil fungsi `acc.GLCM.extract_batch` untuk masing-masing dataset citra (`data_stage1`, `data_stage2`, `data_stage3`) dengan sudut 0, 45, 90, dan 135 derajat pada jarak $d=1$. Fungsi `extract_batch` mengoptimalkan pemrosesan dengan menghitung matriks fitur spasial GLCM secara batch di RAM menggunakan matriks NumPy terindeks cepat, mengekstrak 7 properti statistik (Contrast, Homogeneity, Correlation, Dissimilarity, Entropy, ASM, dan Energy) untuk setiap sudut. Hasilnya dikembalikan sebagai objek kamus (dictionary) yang berisi array fitur terstruktur untuk masing-masing tahap."
 ])
 
 # Cell 23: DataFrame creation for all three stages
@@ -643,6 +761,12 @@ add_code([
     "df_s1 = pd.DataFrame(features_s1)",
     "df_s2 = pd.DataFrame(features_s2)",
     "df_s3 = pd.DataFrame(features_s3)"
+])
+add_explanation([
+    "Sel ini mengonversi kamus fitur spasial GLCM hasil ekstraksi batch dari ketiga tahap preprocessing menjadi objek Pandas DataFrame.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Operasi ini memanggil konstruktor kelas Pandas `pd.DataFrame()` untuk mengonversi kamus array fitur menjadi representasi tabel dua dimensi (`df_s1`, `df_s2`, `df_s3`). Format DataFrame ini memudahkan manipulasi kolom, pengindeksan baris, analisis statistik, serta integrasi langsung dengan modul pemisahan data Scikit-learn."
 ])
 
 # Cell 24: Write extraction's results to CSV
@@ -674,6 +798,12 @@ add_code([
     "",
     "print(\"Features saved! hasil_ekstraksi_1.csv contains Stage 3 features.\")",
     "df_s3_full.head()"
+])
+add_explanation([
+    "Sel ini menggabungkan metadata nama file dan label dengan matriks fitur tekstur GLCM, lalu menulis data dari ketiga tahap tersebut ke dalam berkas CSV terpisah di disk penyimpanan lokal.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Program menggunakan `pd.concat` untuk menggabungkan kolom metadata citra dengan kolom fitur tekstur numerik secara horizontal (pada `axis=1`). Setelah itu, metode `.to_csv()` dipanggil untuk menulis data ke file `hasil_ekstraksi_stage1.csv`, `hasil_ekstraksi_stage2.csv`, dan `hasil_ekstraksi_stage3.csv`. Berkas Tahap 3 juga diduplikasi sebagai `hasil_ekstraksi_1.csv` untuk mencocokkan spesifikasi template proyek tugas PCD. Langkah persistensi ini menjamin data fitur spasial tersimpan aman dan siap dimuat kapan saja tanpa perlu mengulang komputasi GLCM yang berat."
 ])
 
 # Cell 26: Features Selection markdown
@@ -728,9 +858,20 @@ add_code([
     "print(f\"Stage 2 selected features: {len(select2)} / 28\")",
     "print(f\"Stage 3 selected features: {len(select3)} / 28\")"
 ])
+add_explanation([
+    "Sel ini menerapkan metode penyaringan fitur berbasis korelasi linier Pearson untuk mereduksi kolom fitur yang redundan.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Fungsi pembantu `filter_correlated_features` bekerja dengan cara:",
+    "1. Menghitung matriks korelasi Pearson menggunakan `.corr()` pada kolom-kolom fitur.",
+    "2. Melakukan penelusuran segitiga atas matriks korelasi untuk mendeteksi pasangan fitur yang memiliki nilai korelasi $\\ge 0.95$.",
+    "3. Mempertahankan salah satu fitur dan menyingkirkan fitur lainnya yang redundan.",
+    "",
+    "Langkah reduksi dimensi ini secara efektif menyusutkan kolom fitur dari 28 kolom menjadi kolom-kolom independen (sekitar 8-9 fitur terpilih). Ini mengurangi risiko multicollinearity yang dapat merusak estimasi parameter SVM/KNN dan mempercepat komputasi pelatihan model AI."
+])
 
 # Cell 29: Splitting Data Markdown
-add_markdown(["## Pembagian Data"])
+add_markdown(["## IV. Pembagian Data"])
 
 # Cell 30: Splitting Data code
 add_justification(
@@ -753,9 +894,15 @@ add_code([
     "print(\"Stage 3 Train Set shape:\", X_train3.shape)",
     "print(\"Stage 3 Test Set shape:\", X_test3.shape)"
 ])
+add_explanation([
+    "Sel ini memisahkan matriks fitur terseleksi beserta label target ke dalam subset data pelatihan (*training set*, 80%) dan data pengujian (*testing set*, 20%) untuk ketiga tahapan preprocessing secara independen.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Program memanggil fungsi `train_test_split` dari pustaka Scikit-learn (`sklearn.model_selection`). Parameter `random_state=67` digunakan untuk mengunci seed generator angka acak. Penguncian seed acak pada nilai 67 ini memastikan bahwa pembagian data latih dan uji selalu menghasilkan pembagian baris yang identik di setiap eksekusi, menjamin keadilan evaluasi komparasi antar model klasifikasi (Random Forest, SVM, KNN)."
+])
 
 # Cell 31: Feature Normalization markdown
-add_markdown(["## Normalisasi Fitur"])
+add_markdown(["## V. Normalisasi Fitur"])
 
 # Cell 32: Feature Normalization methods markdown
 add_markdown([
@@ -801,9 +948,15 @@ add_code([
     "X_train, X_test = X_train3, X_test3",
     "print(\"Standardization completed and models/scaler.joblib saved successfully!\")"
 ])
+add_explanation([
+    "Sel ini menerapkan standardisasi Z-score pada kolom fitur spasial dan mengekspor parameter rata-rata (mean) serta deviasi standar (std) dari Tahap 3 ke dalam file `models/scaler.joblib`.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Standardisasi dilakukan dengan menghitung rata-rata dan deviasi standar dari fitur *training set*, lalu mentransformasikan kolom data menggunakan rumus: $X_{\\text{scaled}} = (X - \\mu) / (\\sigma + 10^{-8})$. Nilai deviasi ditambah epsilon kecil ($10^{-8}$) untuk menghindari pembagian dengan nol. Parameter $\\mu$ dan $\\sigma$ dari Tahap 3 kemudian disimpan menggunakan `joblib.dump` untuk memfasilitasi normalisasi data baru saat model dideploy secara online."
+])
 
 # Cell 34: Modeling markdown
-add_markdown(["## Pemodelan"])
+add_markdown(["## VI. Pemodelan"])
 
 # Cell 35: Define Model markdown
 add_markdown(["### Definisi Model"])
@@ -828,6 +981,17 @@ add_code([
     "rf = RandomForestClassifier(n_estimators=100, random_state=67)",
     "svm = SVC(C=10.0, kernel='rbf', random_state=67)",
     "knn = KNeighborsClassifier(n_neighbors=3, weights='uniform')"
+])
+add_explanation([
+    "Sel ini mendefinisikan fungsi pembantu `generateClassificationReport` untuk mencetak evaluasi metrik kinerja model dan menginisialisasi parameter dasar dari tiga classifier (Random Forest, SVM, dan KNN).",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Fungsi evaluasi memanggil fungsi Scikit-learn `classification_report`, `confusion_matrix`, dan `accuracy_score`. Inisiasi model diatur sebagai berikut:",
+    "- `RandomForestClassifier` dengan 100 estimator pohon keputusan (`n_estimators=100`) dan seed acak `random_state=67`.",
+    "- `SVC` (SVM) dengan regularisasi tingkat tinggi `C=10.0`, kernel non-linear `rbf`, dan seed acak `random_state=67`.",
+    "- `KNeighborsClassifier` dengan tetangga terdekat $k=3$ dan pembobotan seragam (`weights='uniform'`).",
+    "",
+    "Penyetelan parameter awal ini memastikan performa model stabil dan terkontrol."
 ])
 
 # Cell 37: Train Random Forest markdown
@@ -868,6 +1032,12 @@ add_code([
     "joblib.dump(rf_s3, 'models/rf_model.joblib')",
     "rf = rf_s3"
 ])
+add_explanation([
+    "Sel ini melatih (fitting) tiga model pengklasifikasi Random Forest pada fitur spasial dari ketiga tahap preprocessing secara terpisah, mengevaluasi akurasi pengujiannya, dan menyimpan model Tahap 3 ke berkas `models/rf_model.joblib`.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Program memanggil metode `.fit(X_train, y_train)` Scikit-learn untuk melatih 100 pohon keputusan secara paralel pada subset data latihan masing-masing tahap. Model kemudian memprediksi sampel pengujian dengan `.predict(X_test)`. Hasil akurasi dievaluasi dan dicetak berdampingan. Model dari Tahap 3 (lengkap dengan penajaman tepi) diekspor ke disk menggunakan `joblib.dump` agar dapat dimuat ulang secara instan."
+])
 
 # Cell 39: Train SVM markdown
 add_markdown(["### Latih Klasifikasi SVM"])
@@ -906,6 +1076,12 @@ add_code([
     "# Save Stage 3 SVM for compatibility",
     "joblib.dump(svm_s3, 'models/svm_model.joblib')",
     "svm = svm_s3"
+])
+add_explanation([
+    "Sel ini melatih tiga model Support Vector Machine (SVM) pada fitur spasial ketiga tahap preprocessing, menguji akurasinya, dan mengekspor model Tahap 3 ke dalam file `models/svm_model.joblib`.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Program melatih model SVM menggunakan kernel RBF dan regularisasi kesalahan $C=10.0$. Kernel RBF memetakan fitur spasial GLCM ke dimensi yang lebih tinggi secara dinamis untuk menemukan hyperplane pemisah non-linear yang optimal. Metode `.fit()` melatih model, `.predict()` menghasilkan label prediksi pengujian, dan `joblib.dump()` mengamankan model teroptimal Tahap 3 ke media penyimpanan."
 ])
 
 # Cell 41: Train KNN markdown
@@ -946,9 +1122,15 @@ add_code([
     "joblib.dump(knn_s3, 'models/knn_model.joblib')",
     "knn = knn_s3"
 ])
+add_explanation([
+    "Sel ini melatih tiga model pengklasifikasi K-Nearest Neighbors (KNN) dengan $k=3$ tetangga terdekat pada ketiga tahap fitur spasial, menguji performanya, dan mengekspor model Tahap 3 ke berkas `models/knn_model.joblib`.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Program memanggil metode `.fit()` untuk mengindeks sebaran fitur latih di memori. Model memprediksi citra uji dengan menghitung jarak Euclidean terdekat terhadap 3 tetangga terdekat. Model dari Tahap 3 disimpan secara permanen ke disk lokal menggunakan `joblib.dump`."
+])
 
 # Cell 43: Confusion Matrix markdown
-add_markdown(["## Evaluasi dengan Confusion Matrix"])
+add_markdown(["## VII. Evaluasi dengan Confusion Matrix"])
 
 # Cell 44: Confusion Matrix plots code
 add_justification(
@@ -978,6 +1160,12 @@ add_code([
     "plot_confusion_matrix(y_test3, rf_s3.predict(X_test3), \"Random Forest (Stage 3) Confusion Matrix\")",
     "plot_confusion_matrix(y_test3, svm_s3.predict(X_test3), \"SVM (Stage 3) Confusion Matrix\")",
     "plot_confusion_matrix(y_test3, knn_s3.predict(X_test3), \"KNN (Stage 3) Confusion Matrix\")"
+])
+add_explanation([
+    "Sel ini memvisualisasikan Confusion Matrix berupa heatmap untuk model Random Forest, SVM, dan KNN pada hasil klasifikasi akhir Tahap 3.",
+    "",
+    "**Di Balik Layar (Behind the Scenes):**",
+    "Fungsi ini menghitung confusion matrix menggunakan `confusion_matrix(y_true, y_pred)` dari Scikit-learn, lalu membungkus hasilnya ke dalam objek `ConfusionMatrixDisplay`. Untuk memastikan plot bersih dan mudah dibaca, kita menetapkan parameter `include_values=False` di dalam pemanggilan metode `.plot(cmap=plt.cm.Blues, ax=ax, xticks_rotation='vertical', include_values=False)`. Pengaturan ini secara efektif menyembunyikan penulisan angka kuantitatif mentah di dalam sel grid heatmap, mencegah terjadinya tumpang tindih teks antar kelas yang tidak rapi, dan memusatkan interpretasi pada ketebalan warna biru sepanjang diagonal utama matriks yang merepresentasikan akurasi klasifikasi sukses yang tinggi."
 ])
 
 notebook = {
