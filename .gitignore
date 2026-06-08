@@ -222,5 +222,5 @@ dataset/**/*.jpg
 dataset/**/*.jpeg
 dataset/**/*.png
 models/
-hasil_ekstraksi_1.csv
+hasil_ekstraksi*.csv
 fgvc-aircraft/
