@@ -103,16 +103,25 @@ Setiap notebook memplot perbandingan Sebelum (Original Grayscale) dan Sesudah (P
 Berikut adalah contoh visualisasi Sebelum vs Sesudah preprocessing pada beberapa tahap:
 
 #### Stage 1: Noise Reduction (Gaussian & Median Blur)
-![Stage 1 Preprocessing Transition](assets/preprocessing_stage1.png)
+<p align="center">
+  <img src="assets/preprocessing_stage1.png" alt="Stage 1 Preprocessing Transition" />
+</p>
 
 #### Stage 3: Detail & Edge Enhancement (Unsharp Mask & Sharpening)
-![Stage 3 Preprocessing Transition](assets/preprocessing_stage3.png)
+<p align="center">
+  <img src="assets/preprocessing_stage3.png" alt="Stage 3 Preprocessing Transition" />
+</p>
 
 #### Stage 5: Morphological Structural Enhancement (Morphological Opening & CLAHE)
-![Stage 5 Preprocessing Transition](assets/preprocessing_stage5.png)
+<p align="center">
+  <img src="assets/preprocessing_stage5.png" alt="Stage 5 Preprocessing Transition" />
+</p>
 
 #### Stage 7: Wavelet-Domain Denoising (Wavelet Denoise & CLAHE & Sharpen)
-![Stage 7 Preprocessing Transition](assets/preprocessing_stage7.png)
+<p align="center">
+  <img src="assets/preprocessing_stage7.png" alt="Stage 7 Preprocessing Transition" />
+</p>
+
 
 ---
 
@@ -169,7 +178,10 @@ Setiap model dievaluasi untuk melihat tingkat keberhasilan pengelompokan prediks
 
 Berikut adalah Confusion Matrix dari model terbaik kami (**SVM RBF pada Stage 1** yang memperoleh akurasi tertinggi **69.50%**):
 
-![SVM Stage 1 Confusion Matrix](assets/svm_stage1_confusion_matrix.png)
+<p align="center">
+  <img src="assets/svm_stage1_confusion_matrix.png" alt="SVM Stage 1 Confusion Matrix" />
+</p>
+
 
 ---
 
