@@ -13,12 +13,17 @@
 ---
 
 # Project Overview
-Pada proyek PCD ini, kami melakukan eksperimen klasifikasi citra pesawat terbang komersial menggunakan algoritma pembelajaran mesin tradisional (KNN, SVM, dan Random Forest) berdasarkan ekstraksi fitur tekstur GLCM. Proyek ini dipecah menjadi tiga notebook terpisah untuk mengevaluasi dampak dari masing-masing tahap preprocessing secara terisolasi:
+Pada proyek PCD ini, kami melakukan eksperimen klasifikasi citra pesawat terbang komersial menggunakan algoritma pembelajaran mesin tradisional (KNN, SVM, dan Random Forest) berdasarkan ekstraksi fitur hybrid (GLCM + HOG). Proyek ini dipecah menjadi delapan notebook terpisah untuk mengevaluasi dampak dari masing-masing tahap preprocessing secara terisolasi maupun kumulatif:
+0. **`Stage0_AeroVision.ipynb`**: Tanpa Preprocessing (Hanya penyeragaman ukuran citra ke $256 \times 256$ piksel sebagai baseline).
 1. **`Stage1_AeroVision.ipynb`**: Reduksi noise spasial frekuensi tinggi (Gaussian + Median Blur).
 2. **`Stage2_AeroVision.ipynb`**: Reduksi noise + Peningkatan kontras lokal (CLAHE + Koreksi Gamma).
 3. **`Stage3_AeroVision.ipynb`**: Reduksi noise + Peningkatan kontras + Penajaman detail/tepi (Unsharp Mask + Sharpening).
+4. **`Stage4_AeroVision.ipynb`**: Edge-preserving denoising + Contrast Stretching (Non-Local Means + Contrast Stretch).
+5. **`Stage5_AeroVision.ipynb`**: Morfologi struktur + CLAHE (Morphological Opening + CLAHE).
+6. **`Stage6_AeroVision.ipynb`**: Bilateral filter + CLAHE + Detail sharpening (Bilateral + CLAHE + Unsharp Mask).
+7. **`Stage7_AeroVision.ipynb`**: Wavelet de-noising + CLAHE + Sharpening (Wavelet Denoise + CLAHE + Sharpen).
 
-Eksperimen ini mengevaluasi kinerja model pada **10 kelas pesawat terbang komersial** (1.000 citra total, diaugmentasikan menjadi 3.000 citra) dengan akselerasi perangkat keras GPU (CuPy) untuk mempercepat proses komputasi.
+Eksperimen ini mengevaluasi kinerja model pada **10 kelas pesawat terbang komersial** (1.000 citra total, diaugmentasikan menjadi 3.000 citra) dengan akselerasi perangkat keras GPU (CuPy) untuk mempercepat proses komputasi. Sebagai bahan perbandingan riset (RESEARCH PURPOSES), setiap notebook juga dilengkapi dengan implementasi klasifikasi Convolutional Neural Network (CNN).
 
 ---
 
@@ -27,9 +32,14 @@ Untuk mempermudah eksperimen tanpa konfigurasi lokal, Anda dapat membuka masing-
 
 | Tahapan Notebook | Deskripsi / Fokus Preprocessing | Tautan Google Colab |
 | :--- | :--- | :--- |
+| **Stage 0: Baseline** | Tanpa Preprocessing (Hanya Raw Resize ke 256x256) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Schryzon/AeroVision/blob/main/Stage0_AeroVision.ipynb) |
 | **Stage 1: Noise Reduction** | Reduksi noise spasial frekuensi tinggi (Gaussian + Median Blur) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Schryzon/AeroVision/blob/main/Stage1_AeroVision.ipynb) |
 | **Stage 2: Contrast Enhancement** | Reduksi noise + Peningkatan kontras lokal (CLAHE + Koreksi Gamma) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Schryzon/AeroVision/blob/main/Stage2_AeroVision.ipynb) |
 | **Stage 3: Detail Enhancement** | Reduksi noise + Peningkatan kontras + Penajaman detail/tepi (Unsharp Mask + Sharpening) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Schryzon/AeroVision/blob/main/Stage3_AeroVision.ipynb) |
+| **Stage 4: Edge-Preserving Denoise** | Non-Local Means Denoising + Contrast Stretching | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Schryzon/AeroVision/blob/main/Stage4_AeroVision.ipynb) |
+| **Stage 5: Morphological opening** | Morphological Opening + CLAHE | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Schryzon/AeroVision/blob/main/Stage5_AeroVision.ipynb) |
+| **Stage 6: Bilateral Filter** | Bilateral Filter + CLAHE + Unsharp Mask | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Schryzon/AeroVision/blob/main/Stage6_AeroVision.ipynb) |
+| **Stage 7: Wavelet Denoise** | Wavelet Denoising + CLAHE + Sharpening | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Schryzon/AeroVision/blob/main/Stage7_AeroVision.ipynb) |
 | **Complete Pipeline** | Gabungan alur kerja klasifikasi AeroVision lengkap | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Schryzon/AeroVision/blob/main/AeroVision.ipynb) |
 
 ---
@@ -78,12 +88,31 @@ Kami memperkaya variabilitas orientasi objek pesawat terbang agar model klasifik
 ---
 
 # III. Persiapan Data & Preprocessing
-Kami memisahkan notebook menjadi 3 bagian terpisah untuk mengevaluasi pengaruh kualitas pengolahan citra terhadap statistik tekstur:
-- **Tahap 1 (Noise Reduction)**: Mengaplikasikan **Gaussian Blur (kernel=3)** untuk meredam noise sensor frekuensi tinggi dan **Median Blur (kernel=3)** untuk mengeliminasi noise salt-and-pepper.
-- **Tahap 2 (Contrast Enhancement)**: Menambahkan **CLAHE (clip_limit=2.0)** untuk menyeimbangkan kontras lokal pesawat terhadap langit, dan **Koreksi Gamma ($\gamma=0.9$)** untuk mencerahkan bayangan gelap pada bagian mesin/bawah pesawat.
-- **Tahap 3 (Detail Enhancement)**: Menggunakan **Unsharp Masking** untuk memperjelas outline bodi pesawat dan **Sharpening filter** untuk mempertegas kontur panel logam pesawat.
+Kami memisahkan eksperimen menjadi delapan tahap preprocessing untuk mengevaluasi pengaruh kualitas pengolahan citra terhadap statistik tekstur dan bentuk secara mendalam:
+- **Stage 0 (Baseline)**: Tanpa preprocessing (Hanya penyeragaman ukuran citra ke $256 \times 256$ piksel).
+- **Stage 1 (Noise Reduction)**: Mengaplikasikan **Gaussian Blur (kernel=3)** untuk meredam noise sensor frekuensi tinggi dan **Median Blur (kernel=3)** untuk mengeliminasi noise salt-and-pepper.
+- **Stage 2 (Contrast Enhancement)**: Menambahkan **CLAHE (clip_limit=2.0)** untuk menyeimbangkan kontras lokal pesawat terhadap langit, dan **Koreksi Gamma ($\gamma=0.9$)** untuk mencerahkan bayangan gelap pada bagian mesin/bawah pesawat.
+- **Stage 3 (Detail Enhancement)**: Menggunakan **Unsharp Masking** untuk memperjelas outline bodi pesawat dan **Sharpening filter** untuk mempertegas kontur panel logam pesawat.
+- **Stage 4 (Edge-Preserving Denoise)**: Menggunakan **Non-Local Means Denoising (NLMeans)** untuk meminimalkan noise tanpa merusak ketajaman batas tepi, dikombinasikan dengan **Contrast Stretching** untuk meregangkan rentang dinamis intensitas piksel.
+- **Stage 5 (Morphological Opening)**: Menerapkan **Morphological Opening** dengan kernel $3 \times 3$ untuk merapikan kontur bodi pesawat dan menghilangkan objek kecil latar belakang, dikombinasikan dengan **CLAHE**.
+- **Stage 6 (Bilateral Filter)**: Menggunakan **Bilateral Filter** untuk smoothing adaptif yang menjaga batas tepi bodi pesawat tetap tegas, diikuti dengan **CLAHE** dan **Unsharp Masking**.
+- **Stage 7 (Wavelet Denoise)**: Menerapkan **Wavelet Denoising** dengan soft thresholding level 2 pada domain frekuensi wavelet untuk reduksi noise multi-skala, lalu ditingkatkan kontrasnya dengan **CLAHE** dan dipertegas kembali dengan filter penajam.
 
-Setiap notebook akan memplot perbandingan Sebelum (Original Grayscale) dan Sesudah (Preprocessed) secara berdampingan untuk satu sampel dari masing-masing 10 kelas pesawat.
+Setiap notebook memplot perbandingan Sebelum (Original Grayscale) dan Sesudah (Preprocessed) secara berdampingan untuk satu sampel dari masing-masing 10 kelas pesawat.
+
+Berikut adalah contoh visualisasi Sebelum vs Sesudah preprocessing pada beberapa tahap:
+
+#### Stage 1: Noise Reduction (Gaussian & Median Blur)
+![Stage 1 Preprocessing Transition](assets/preprocessing_stage1.png)
+
+#### Stage 3: Detail & Edge Enhancement (Unsharp Mask & Sharpening)
+![Stage 3 Preprocessing Transition](assets/preprocessing_stage3.png)
+
+#### Stage 5: Morphological Structural Enhancement (Morphological Opening & CLAHE)
+![Stage 5 Preprocessing Transition](assets/preprocessing_stage5.png)
+
+#### Stage 7: Wavelet-Domain Denoising (Wavelet Denoise & CLAHE & Sharpen)
+![Stage 7 Preprocessing Transition](assets/preprocessing_stage7.png)
 
 ---
 
@@ -111,27 +140,36 @@ Metode ini secara signifikan menyingkirkan multicollinearity, mereduksi fitur hy
   ```
 - **Normalisasi**: Kolom fitur dinormalisasi menggunakan Standardisasi Z-Score agar memiliki nilai rata-rata 0 dan deviasi standar 1. Parameter skala latih disimpan ke berkas `models/scaler.joblib` untuk pengujian data baru.
 
----
-
 # VII. Pemodelan & Optimasi Hyperparameter
-Kami melatih tiga model klasifikasi utama (Random Forest, SVM, dan KNN) menggunakan hyperparameter yang telah disetel secara optimal berdasarkan hasil brute force grid search (dengan seed acak `random_state=67`):
+Kami melatih tiga model klasifikasi utama (Random Forest, SVM, dan KNN) menggunakan hyperparameter yang telah disetel secara optimal berdasarkan hasil brute force grid search (dengan seed acak `random_state=67`), serta model CNN sederhana untuk tujuan riset:
 - **Random Forest**: Menggunakan `n_estimators=100` untuk mengurangi variance ensemble.
 - **SVM**: RBF Kernel dengan parameter regulasi teroptimasi `C=5.0` dan simpangan kernel `gamma='scale'` (RBF kernel) untuk pemisahan margin spasial terbaik pada dimensi tinggi.
 - **KNN**: Menggunakan tetangga terdekat `k=5` dengan bobot seragam.
+- **CNN (Research)**: Model PyTorch dengan 4 layer `Conv2d` (1->16->32->64->64, kernel 3x3, padding 1), `MaxPool2d`, `AdaptiveAvgPool2d(1,1)`, dan dua `Linear` layer (64->64->100), dilatih selama 5 epoch pada **seluruh 10.000 citra (100 kelas)** menggunakan akselerasi GPU CUDA native Windows (PyTorch CUDA 12.4).
 
 ### Hasil Akurasi Eksperimen (Mode: `diverse_subset` - 10 Kelas Komersial, 16 Levels Quantization, Hybrid GLCM + HOG)
-| Preprocessing Stage | Random Forest | SVM (RBF Kernel) | KNN (k=5) |
-|---|---|---|---|
-| **Stage 1 (Noise Reduction only)** | **48.00%** | **62.50%** | **42.00%** |
-| **Stage 2 (Noise + Contrast)** | **45.00%** | **61.00%** | **40.50%** |
-| **Stage 3 (Noise + Contrast + Edge)** | **42.50%** | **59.50%** | **38.50%** |
+| Preprocessing Stage | Random Forest | SVM (RBF Kernel) | KNN (k=5) | CNN (Research - 10,000 Images, 100 Classes)* |
+|---|---|---|---|---|
+| **Stage 0 (No Preprocessing / Resize)** | **45.67%** | **67.17%** | **46.00%** | **2.90%** |
+| **Stage 1 (Noise Blur)** | **53.33%** | **69.50%** | **41.83%** | **1.70%** |
+| **Stage 2 (Noise + Contrast)** | **50.83%** | **69.17%** | **45.33%** | **1.85%** |
+| **Stage 3 (Noise + Contrast + Edge)** | **41.33%** | **64.50%** | **46.67%** | **2.55%** |
+| **Stage 4 (NLMeans + Contrast Stretch)** | **46.50%** | **67.83%** | **39.83%** | **2.10%** |
+| **Stage 5 (Morph Opening + CLAHE)** | **43.17%** | **66.83%** | **47.83%** | **2.75%** |
+| **Stage 6 (Bilateral + CLAHE + Unsharp)** | **44.00%** | **67.83%** | **43.50%** | **2.00%** |
+| **Stage 7 (Wavelet + CLAHE + Sharpen)** | **41.17%** | **64.33%** | **46.50%** | **2.50%** |
 
-*Analisis Akurasi: Melalui modifikasi fitur Hybrid (GLCM + HOG) dan pencarian hyperparameter optimal, model berhasil melampaui target akurasi 50% di ketiga tahap. SVM mencapai akurasi tertinggi sebesar **62.50%** pada Stage 1 (Noise Reduction). Seiring bertambahnya tingkat kompleksitas preprocessing (CLAHE pada Stage 2 dan Sharpening pada Stage 3), akurasi SVM sedikit menurun menjadi **61.00%** dan **59.50%**. Hal ini disebabkan karena penajaman tepi/detail (sharpening) memperkuat noise frekuensi tinggi latar belakang (seperti awan, runway, dan sensor noise) yang mengaburkan batas tekstur pesawat yang rapi.*
+*Analisis Akurasi: Melalui modifikasi fitur Hybrid (GLCM + HOG) dan pencarian hyperparameter optimal, model tradisional SVM berhasil mempertahankan kinerja unggul di seluruh rentang pengolahan citra. SVM mencapai akurasi tertinggi sebesar **69.50%** pada Stage 1 (Gaussian + Median Blur) dan **69.17%** pada Stage 2 (CLAHE + Gamma). Menariknya, penajaman tepi spasial yang agresif (seperti Unsharp Masking pada Stage 3 atau Wavelet/Bilateral pada Stage 7) cenderung menurunkan akurasi model tradisional karena memperkuat noise berfrekuensi tinggi dari latar belakang yang merusak konsistensi deskriptor tekstur mikro GLCM. Untuk CNN (RESEARCH PURPOSES), model diimplementasikan menggunakan **PyTorch (CUDA 12.4)** dan mengklasifikasikan seluruh **100 kelas (10.000 citra)** pada resolusi $256 \times 256$ piksel dengan akselerasi GPU native Windows. Rendahnya akurasi CNN (Stage 0: 2.90%) pada 5 epoch disebabkan oleh kompleksitas tinggi tugas klasifikasi 100 kelas dengan data yang sangat terbatas (hanya 80 gambar latihan per kelas) serta jumlah epoch yang sangat singkat untuk melatih model dari nol (from scratch).*
 
 ---
 
+
 # VIII. Evaluasi dengan Confusion Matrix
 Setiap model dievaluasi untuk melihat tingkat keberhasilan pengelompokan prediksi benar vs salah. Visualisasi matriks kebingungan diatur agar tidak menampilkan angka kuantitatif mentah (`include_values=False`) untuk mencegah teks yang saling bertumpuk dan tidak rapi pada sel grid.
+
+Berikut adalah Confusion Matrix dari model terbaik kami (**SVM RBF pada Stage 1** yang memperoleh akurasi tertinggi **69.50%**):
+
+![SVM Stage 1 Confusion Matrix](assets/svm_stage1_confusion_matrix.png)
 
 ---
 
@@ -141,9 +179,9 @@ Setiap model dievaluasi untuk melihat tingkat keberhasilan pengelompokan prediks
 
 SVM (Support Vector Machine) dengan kernel RBF secara konsisten menghasilkan akurasi tertinggi. Ada tiga alasan utama:
 
-1. **SVM dirancang untuk dimensi tinggi.** Fitur gabungan HOG + GLCM menghasilkan 4.412 dimensi per citra. SVM mencari *hyperplane* yang memaksimalkan *margin* antar kelas — justru inilah kekuatan optimalnya di ruang berdimensi tinggi.
+1. **SVM dirancang untuk dimensi tinggi.** Fitur gabungan HOG + GLCM menghasilkan 4.412 dimensi per citra. SVM mencari *hyperplane* yang memaksimalkan *margin* antar kelas; justru inilah kekuatan optimalnya di ruang berdimensi tinggi.
 2. **Kernel RBF menangkap hubungan non-linear.** Perbedaan antara ATR-72 (baling-baling) dan A380 (mesin jet ganda) bukan hubungan linear. Kernel RBF memetakan data ke ruang Hilbert berdimensi tak terbatas untuk menemukan batas pemisah non-linear yang kompleks.
-3. **KNN terkena *curse of dimensionality*.** Di 4.412 dimensi, jarak Euclidean antar semua titik data menjadi hampir sama — konsep "tetangga terdekat" kehilangan makna. Random Forest pun rawan *high variance* karena banyak pohon yang bercabang berdasarkan fitur noise.
+3. **KNN terkena *curse of dimensionality*.** Di 4.412 dimensi, jarak Euclidean antar semua titik data menjadi hampir sama, sehingga konsep "tetangga terdekat" kehilangan makna. Random Forest pun rawan *high variance* karena banyak pohon yang bercabang berdasarkan fitur noise.
 
 | Model | Keunggulan | Kelemahan di Dataset Ini |
 |-------|-----------|--------------------------|
@@ -157,8 +195,8 @@ SVM (Support Vector Machine) dengan kernel RBF secara konsisten menghasilkan aku
 
 HOG dan GLCM saling melengkapi pada dimensi yang berbeda:
 
-- **GLCM** menangkap **tekstur mikro** — hubungan spasial antar piksel bertetangga. Setiap kelas pesawat punya "sidik jari tekstur": A380 memiliki fuselage mulus (homogenitas tinggi), DHC-6 punya tekstur badan kasar (dissimilarity tinggi). GLCM menghasilkan 56 fitur dari 2 jarak × 4 sudut.
-- **HOG** menangkap **bentuk struktural makro** — distribusi arah tepi dan gradien secara spasial. HOG merekam kemiringan sayap, posisi dan jumlah mesin, serta kontur fuselage keseluruhan. Dengan resolusi 96×96 dan cell 8×8, HOG menghasilkan 4.356 fitur.
+- **GLCM** menangkap **tekstur mikro**, yaitu hubungan spasial antar piksel bertetangga. Setiap kelas pesawat punya "sidik jari tekstur": A380 memiliki fuselage mulus (homogenitas tinggi), DHC-6 punya tekstur badan kasar (dissimilarity tinggi). GLCM menghasilkan 56 fitur dari 2 jarak × 4 sudut.
+- **HOG** menangkap **bentuk struktural makro**, berupa distribusi arah tepi dan gradien secara spasial. HOG merekam kemiringan sayap, posisi dan jumlah mesin, serta kontur fuselage keseluruhan. Dengan resolusi 96×96 dan cell 8×8, HOG menghasilkan 4.356 fitur.
 
 ```
 HOG  → "Ini pesawat dengan sayap swept-back dan 4 mesin"  → Kandidat: A380, 747-400
@@ -181,18 +219,18 @@ Dataset FGVC-Aircraft bukan hanya foto pesawat sempurna di bandara. Dataset ini 
 | 🌫️ Latar belakang kompleks | Hangar, awan, kerumunan | Model harus fokus pada objek utama |
 | 📸 Sudut ekstrem | Bird's-eye view, close-up nose | Distribusi HOG sangat berbeda |
 
-Keberadaan gambar rusak/parsial ini sebenarnya adalah **fitur, bukan bug** — melatih model agar lebih *robust* terhadap kondisi nyata yang tidak sempurna.
+Keberadaan gambar rusak/parsial ini sebenarnya adalah **fitur, bukan bug**, yang melatih model agar lebih *robust* terhadap kondisi nyata yang tidak sempurna.
 
 ---
 
 ### D. Kegunaan Nyata Proyek Ini di Dunia Nyata
 
-1. **🔍 Investigasi Kecelakaan Pesawat** — Tim investigasi (NTSB/KNKT) dapat mengidentifikasi tipe pesawat dari foto puing yang tersebar di lokasi kecelakaan secara otomatis, tanpa menunggu ahli manual, bahkan ketika rekaman penerbangan rusak.
-2. **🛂 Sistem Keamanan Bandara** — Deteksi pesawat yang masuk zona larangan secara real-time, atau klasifikasi otomatis tipe pesawat untuk optimasi slot gate di apron.
-3. **🛡️ Pertahanan & Pengawasan** — Identifikasi pesawat sipil vs militer dari radar imaging atau citra satelit.
-4. **📚 Arsip Penerbangan** — Pelabelan otomatis arsip foto pesawat historis dan sistem pencarian berbasis kemiripan visual.
+1. **🔍 Investigasi Kecelakaan Pesawat**: Tim investigasi (NTSB/KNKT) dapat mengidentifikasi tipe pesawat dari foto puing yang tersebar di lokasi kecelakaan secara otomatis, tanpa menunggu ahli manual, bahkan ketika rekaman penerbangan rusak.
+2. **🛂 Sistem Keamanan Bandara**: Deteksi pesawat yang masuk zona larangan secara real-time, atau klasifikasi otomatis tipe pesawat untuk optimasi slot gate di apron.
+3. **🛡️ Pertahanan & Pengawasan**: Identifikasi pesawat sipil vs militer dari radar imaging atau citra satelit.
+4. **📚 Arsip Penerbangan**: Pelabelan otomatis arsip foto pesawat historis dan sistem pencarian berbasis kemiripan visual.
 
-> Meskipun akurasi ~60-62% terlihat rendah, dalam investigasi kecelakaan, output berupa *5 kandidat tipe pesawat teratas* sudah mempersempit pencarian dari 100+ tipe menjadi 5 kemungkinan — sangat mempercepat kerja investigator.
+> Meskipun akurasi ~64-69.5% terlihat rendah, dalam investigasi kecelakaan, output berupa *5 kandidat tipe pesawat teratas* sudah mempersempit pencarian dari 100+ tipe menjadi 5 kemungkinan, yang sangat mempercepat kerja investigator.
 
 ---
 
@@ -200,16 +238,16 @@ Keberadaan gambar rusak/parsial ini sebenarnya adalah **fitur, bukan bug** — m
 
 PCA justru **menurunkan akurasi SVM** karena:
 
-1. **PCA memilih komponen berdasarkan varians tertinggi, bukan diskriminasi kelas.** Varians tinggi pada fitur HOG di sudut gambar (langit/apron yang bervariasi) bukan sinyal kelas pesawat — itu noise. PCA memilihnya sebagai "penting", lalu membuang fitur spasial posisi-spesifik yang sebenarnya krusial.
+1. **PCA memilih komponen berdasarkan varians tertinggi, bukan diskriminasi kelas.** Varians tinggi pada fitur HOG di sudut gambar (langit/apron yang bervariasi) bukan sinyal kelas pesawat, melainkan noise. PCA memilihnya sebagai "penting", lalu membuang fitur spasial posisi-spesifik yang sebenarnya krusial.
 2. **HOG menyimpan informasi bentuk secara lokal.** Informasi "mesin di sayap kanan pada cell [3,8]" hancur ketika PCA merotasi dan mencampur semua dimensi secara global.
 
 | Konfigurasi | Akurasi (estimasi) |
 |-------------|-------------------|
-| SVM + HOG + GLCM (full) | ~60-62% |
+| SVM + HOG + GLCM (full) | ~64-69.5% |
 | SVM + PCA(95% var) + HOG + GLCM | ~45-50% |
 | KNN + PCA(95% var) + HOG + GLCM | ~50-55% *(PCA justru membantu KNN)* |
 
-> **Khusus KNN**, PCA membantu karena mengurangi *curse of dimensionality* — jarak Euclidean menjadi lebih bermakna. Namun untuk SVM yang kuat di dimensi tinggi, PCA kontraproduktif.
+> **Khusus KNN**, PCA membantu karena mengurangi *curse of dimensionality* sehingga jarak Euclidean menjadi lebih bermakna. Namun untuk SVM yang kuat di dimensi tinggi, PCA kontraproduktif.
 
 ---
 
@@ -219,7 +257,7 @@ Setiap tahap memperkuat sinyal fitur dan menekan noise:
 
 - **Tahap 1 (Noise Reduction):** Gaussian + Median Blur membuat matriks GLCM lebih stabil (kontras dan entropy tidak terpengaruh noise piksel acak), dan mengurangi gradien palsu HOG dari permukaan citra yang kasar.
 - **Tahap 2 (Contrast Enhancement):** CLAHE memperjelas batas pesawat terhadap langit. Koreksi Gamma mengangkat detail area gelap di bawah badan pesawat. Histogram orientasi HOG menjadi lebih *peaky* (tidak flat) sehingga lebih diskriminatif.
-- **Tahap 3 (Edge Enhancement):** Unsharp Mask + Sharpening mempertegas kontur sayap, mesin, dan ekor. HOG menghasilkan histogram orientasi yang lebih definitif — tapi *terlalu tajam* juga dapat memperkuat noise latar belakang, itulah mengapa Stage 3 sedikit menurun.
+- **Tahap 3 (Edge Enhancement):** Unsharp Mask + Sharpening mempertegas kontur sayap, mesin, dan ekor. HOG menghasilkan histogram orientasi yang lebih definitif, meskipun efek yang *terlalu tajam* juga dapat memperkuat noise latar belakang, itulah mengapa Stage 3 sedikit menurun.
 
 **Dalam satu kalimat:** Preprocessing tidak mengubah "gambar apa", tapi mengubah **"seberapa jelas fitur khas kelas itu terlihat bagi algoritma matematis"**.
 
@@ -234,7 +272,7 @@ Setiap tahap memperkuat sinyal fitur dan menekan noise:
 | Jumlah hyperplane SVM | 3 | 10 (jauh lebih kaya) |
 | Kegunaan dunia nyata | Terbatas | Lebih relevan |
 
-Dengan 3 kelas, model mudah "menghapal" tanpa belajar fitur yang robust — akurasi tinggi palsu. Kami memilih 10 kelas dengan variabilitas struktural tinggi yang disengaja: narrow-body (737-800), wide-body (A380, 747-400, MD-11), turboprop (ATR-72, DHC-6, BAE 146-200), piston (Cessna 172), dan regional jet (E-190, Fokker 100). Variasi ini memaksa SVM membangun batas keputusan yang benar-benar bermakna.
+Dengan 3 kelas, model mudah "menghapal" tanpa belajar fitur yang robust, yang menghasilkan akurasi tinggi palsu. Kami memilih 10 kelas dengan variabilitas struktural tinggi yang disengaja: narrow-body (737-800), wide-body (A380, 747-400, MD-11), turboprop (ATR-72, DHC-6, BAE 146-200), piston (Cessna 172), dan regional jet (E-190, Fokker 100). Variasi ini memaksa SVM membangun batas keputusan yang benar-benar bermakna.
 
 ---
 
@@ -244,14 +282,42 @@ Dengan 3 kelas, model mudah "menghapal" tanpa belajar fitur yang robust — akur
 
 1. **Batas kelas bisa didominasi outlier** (foto sudut ekstrem, parsial). Augmentasi mempertegas distribusi kelas yang "wajar" sehingga support vector SVM lebih representatif.
 2. **HOG sangat sensitif terhadap orientasi.** Flip horizontal membalik seluruh histogram orientasi. Tanpa augmentasi, SVM kesulitan mengenali pesawat yang "terbalik arah" dari foto latih.
-3. **Rotasi 15° melatih invariansi sudut** — pesawat di foto nyata jarang sempurna horizontal.
+3. **Rotasi 15° melatih invariansi sudut**, karena pesawat di foto nyata jarang sempurna horizontal.
 
 | Skenario | Estimasi Akurasi SVM |
 |----------|---------------------|
 | 1.000 gambar asli (tanpa augmentasi) | ~45-50% |
-| 3.000 gambar (dengan augmentasi 3x) | ~60-62% |
+| 3.000 gambar (dengan augmentasi 3x) | ~64-69.5% |
 
 Augmentasi flip + rotate meningkatkan akurasi SVM sekitar **10-15 persentase poin** dan meningkatkan stabilitas model secara keseluruhan.
+
+---
+
+### I. Perbandingan Model Tradisional (GLCM + HOG) vs Deep Learning (CNN) [RESEARCH PURPOSES]
+
+Pada bagian akhir pemodelan, kami melatih arsitektur **CNN (Convolutional Neural Network)** sederhana sebagai bahan perbandingan riset. Berikut adalah analisis perbandingan antara metode ekstraksi fitur manual (*handcrafted*) dengan ekstraksi fitur otomatis berbasis deep learning:
+
+#### 1. Kebutuhan Data Latih (Data Hunger)
+- **Model Tradisional (SVM / RF + GLCM + HOG)**: Menggunakan fitur yang didefinisikan secara matematis (seperti korelasi keabuan spasial dan distribusi arah gradien tepi). Karena fiturnya sudah 'jadi', model SVM dengan regularisasi yang tepat dapat belajar dengan sangat efisien pada dataset kecil (~3.000 citra augmented, ~300 per kelas) dan mencapai akurasi optimal (~64-69.5%).
+- **Deep Learning (CNN, PyTorch)**: CNN harus mempelajari semua filter konvolusi (fitur tepi, tekstur, bentuk) dari awal (dari nilai piksel mentah). Pada dataset terbatas dengan 5 epoch, model CNN cenderung *underfitting* (akurasi Stage 0: 2.90% pada 100 kelas, 10.000 citra) karena parameter bobot belum terkonvergensi. Ini adalah perilaku yang diharapkan yang disebabkan oleh beberapa faktor kunci:
+  1. **Kompleksitas Kelas**: CNN dilatih pada seluruh **100 kelas** (10.000 citra, hanya 100 citra per kelas). Probabilitas tebakan acak (random guess) hanya **1.00%**, sehingga akurasi **2.90%** sudah lebih baik dari acak tetapi sangat rendah karena ruang pencarian kelas yang sangat luas. Sebaliknya, model tradisional dilatih pada subset terpilih berisi **10 kelas** (3.000 citra augmented, 300 citra per kelas, tebakan acak 10.00%).
+  2. **Data Hunger**: Jaringan konvolusional mendalam membutuhkan ribuan citra per kelas untuk menyetel parameter bobot di lapisan konvolusi secara mandiri. Dengan hanya 80 citra latih per kelas, CNN mengalami *underfitting* yang parah.
+  3. **Waktu Pelatihan Terbatas**: 5 epoch sangat tidak memadai bagi CNN untuk mengoptimalkan loss Sparse Categorical Crossentropy dari nol. CNN membutuhkan ratusan epoch, scheduler learning rate, dan arsitektur yang lebih kompleks untuk konvergen.
+  4. **Spesifikasi Input Grayscale**: Input 1-saluran keabuan membatasi informasi visual (warna) yang dapat digunakan model CNN untuk memisahkan kelas pesawat halus (fine-grained class).
+  5. **Fitur Handcrafted Lebih Terarah**: GLCM dan HOG adalah representasi fitur berbasis rumus matematika yang langsung menargetkan statistik tekstur (GLCM) dan outline garis kontur (HOG). Sementara CNN harus mempelajari filter-filter ini dari nol, yang mustahil dilakukan secara optimal dalam 5 epoch pada data kecil.
+
+#### 2. Ketersediaan Informasi Warna/Saluran
+Masukan citra yang digunakan berupa citra grayscale saluran tunggal (`(256, 256, 1)`). Hal ini membatasi CNN untuk memanfaatkan informasi warna (seperti warna cat maskapai komersial) untuk pembeda kelas. Di sisi lain, HOG dan GLCM memang dirancang khusus untuk memetakan deskriptor gradien dan tekstur keabuan secara deterministik tanpa bergantung pada warna.
+
+#### 3. Waktu Komputasi dan Kompleksitas
+
+| Pendekatan | Waktu Latih | Kebutuhan Memori | Kemudahan Interpretasi |
+|---|---|---|---|
+| **GLCM + HOG + SVM** (3.000 citra, 10 kelas) | Instan (< 2 detik) | Sangat Rendah | Sedang (Statistik Fitur Spasial) |
+| **CNN PyTorch (5 Epoch)** (10.000 citra, 100 kelas, GPU) | ~5-10 menit (RTX 3050 4GB) | Tinggi (VRAM) | Rendah (*Black Box* Jaringan Saraf) |
+
+#### Kesimpulan
+Untuk tugas klasifikasi citra dengan jumlah sampel terbatas per kelas (seperti kasus dataset FGVC-Aircraft subset kita), **pendekatan kombinasi fitur Handcrafted (GLCM + HOG) + Classifier SVM** secara signifikan lebih unggul, efisien, dan memberikan tingkat akurasi yang lebih tinggi dibandingkan dengan melatih model CNN sederhana dari nol (*from scratch*). CNN memerlukan ribuan data tambahan atau pemanfaatan *Transfer Learning* (model pre-trained seperti ResNet/MobileNet) untuk dapat menandingi performa SVM di dataset ini.
 
 ---
 

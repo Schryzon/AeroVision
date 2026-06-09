@@ -3721,7 +3721,7 @@ class Enhancement:
         return xp_mod.clip(noisy, 0, 255).astype(image.dtype)
 
     @staticmethod
-    def denoise_nlmeans(image: ArrayLike, h: float = 10, template_window: int = 7, search_window: int = 21) -> ArrayLike:
+    def denoise_nlmeans(image: ArrayLike, h: float = 10, template_window: int = 7, search_window: int = 11) -> ArrayLike:
         image = to_cpu(_validate_image(image))
         if image.dtype != np.uint8:
             image = np.clip(image, 0, 255).astype(np.uint8)
