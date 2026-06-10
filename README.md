@@ -74,16 +74,17 @@ Membaca dataset dilakukan dengan menggabungkan metadata dari file CSV (`train.cs
 - **Google Colab**: Melakukan penyalinan file langsung (`shutil.copy2`) untuk menjaga kompatibilitas dengan Google Drive.
 - Citra diubah menjadi keabuan (grayscale) menggunakan OpenCV dan diseragamkan ke resolusi **$256 \times 256$ piksel** melalui modul akselerasi perangkat keras:
   ```python
-  img = acc.resize(img, 256, 256)
-  data.append(acc.to_cpu(img))
+  img = cv.resize(img, (256, 256), interpolation=cv.INTER_LINEAR)
+  data_all.append(img)
   ```
+- Hasil resize disimpan ke `cache/data_cache.npz`. Jika cache sudah tersedia dan valid, setiap stage langsung memuat array siap pakai tanpa membaca ulang seluruh gambar. Jika cache rusak atau tidak kompatibel, notebook otomatis membuat ulang cache dari file dataset.
 
 ---
 
 # II. Augmentasi Data
 Kami memperkaya variabilitas orientasi objek pesawat terbang agar model klasifikasi lebih generalis (mencegah overfitting) melalui augmentasi spasial secara paralel:
 1. **Horizontal Flip**: Membalik posisi matriks piksel citra secara horizontal (`acc.Image_Ops.flip`).
-2. **Slight Rotation (15 derajat CCW)**: Memutar citra berlawanan arah jarum jam (`acc.Image_Ops.rotate`). Perubahan ukuran kanvas akibat rotasi secara otomatis dipotong kembali ke $256 \times 256$ menggunakan `acc.resize`.
+2. **Slight Rotation (15 derajat CCW)**: Memutar citra berlawanan arah jarum jam (`acc.Image_Ops.rotate`). Perubahan ukuran kanvas akibat rotasi secara otomatis dipotong kembali ke $256 \times 256$ menggunakan `cv.resize`.
 
 ---
 
@@ -133,42 +134,62 @@ Alih-alih hanya menggunakan fitur tekstur GLCM, proyek ini menerapkan pendekatan
 
 ---
 
-# V. Seleksi Fitur
-Fitur spasial yang saling berkorelasi erat disaring dan disusutkan menggunakan koefisien korelasi linier Pearson dengan ambang batas korelasi $\ge 0.95$:
+# V. Reduksi Dimensi Fitur
+Fitur hybrid GLCM + HOG berukuran **4.412 dimensi** per citra. Pada eksekusi terbaru, fitur tersebut dinormalisasi dan disusutkan menggunakan **StandardScaler + PCA 150 komponen**:
 ```python
-x_new, y, select_cols = filter_correlated_features(df_full, threshold=0.95)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+pca = PCA(n_components=150, random_state=67)
+X_train_pca = pca.fit_transform(X_train_scaled)
+X_test_pca = pca.transform(X_test_scaled)
 ```
-Metode ini secara signifikan menyingkirkan multicollinearity, mereduksi fitur hybrid dari 4.412 kolom menjadi sekitar 3.500–3.600 fitur independen, mempercepat proses latih algoritma klasifikasi, dan menghindari overfitting.
+Kombinasi ini menjaga informasi bentuk/tekstur utama, menekan noise dimensi tinggi, dan membuat SVM/KNN jauh lebih stabil serta cepat.
 
 ---
 
 # VI. Pembagian Data & Normalisasi
 - **Pembagian Data**: Matriks fitur terpilih dipisahkan menjadi 80% subset data latih (*training set*) dan 20% subset data uji (*testing set*) secara acak terkontrol (`random_state=67`):
   ```python
-  X_train, X_test, y_train, y_test = train_test_split(x_new, y, test_size=0.2, random_state=67)
+  X_train, X_test, y_train, y_test = train_test_split(X_raw, y_target, test_size=0.2, random_state=67)
   ```
-- **Normalisasi**: Kolom fitur dinormalisasi menggunakan Standardisasi Z-Score agar memiliki nilai rata-rata 0 dan deviasi standar 1. Parameter skala latih disimpan ke berkas `models/scaler.joblib` untuk pengujian data baru.
+- **Normalisasi + PCA**: Kolom fitur dinormalisasi menggunakan Standardisasi Z-Score, lalu diproyeksikan ke 150 komponen PCA yang hanya di-fit pada training set untuk mencegah data leakage.
 
 # VII. Pemodelan & Optimasi Hyperparameter
-Kami melatih tiga model klasifikasi utama (Random Forest, SVM, dan KNN) menggunakan hyperparameter yang telah disetel secara optimal berdasarkan hasil brute force grid search (dengan seed acak `random_state=67`), serta model CNN sederhana untuk tujuan riset:
+Kami melatih tiga model klasifikasi utama (Random Forest, SVM, dan KNN) menggunakan representasi PCA 150 komponen (dengan seed acak `random_state=67`), serta model CNN transfer learning untuk tujuan riset:
 - **Random Forest**: Menggunakan `n_estimators=100` untuk mengurangi variance ensemble.
-- **SVM**: RBF Kernel dengan parameter regulasi teroptimasi `C=5.0` dan simpangan kernel `gamma='scale'` (RBF kernel) untuk pemisahan margin spasial terbaik pada dimensi tinggi.
-- **KNN**: Menggunakan tetangga terdekat `k=5` dengan bobot seragam.
-- **CNN (Research)**: Model PyTorch dengan 4 layer `Conv2d` (1->16->32->64->64, kernel 3x3, padding 1), `MaxPool2d`, `AdaptiveAvgPool2d(1,1)`, dan dua `Linear` layer (64->64->100), dilatih selama 5 epoch pada **seluruh 10.000 citra (100 kelas)** menggunakan akselerasi GPU CUDA native Windows (PyTorch CUDA 12.4).
+- **SVM**: RBF Kernel dengan parameter regulasi `C=15.0` dan `gamma='scale'`.
+- **KNN**: Menggunakan `k=5` dengan metrik jarak `cosine`.
+- **CNN (Research)**: Model PyTorch berbasis **EfficientNet-B0 ImageNet pretrained**. Input grayscale diulang menjadi 3 channel, sebagian besar backbone dibekukan, blok akhir di-*fine-tune*, dan classifier diganti menjadi 100 kelas. Model dilatih/di-load per stage pada **seluruh 10.000 citra (100 kelas)**.
 
 ### Hasil Akurasi Eksperimen (Mode: `diverse_subset` - 10 Kelas Komersial, 16 Levels Quantization, Hybrid GLCM + HOG)
-| Preprocessing Stage | Random Forest | SVM (RBF Kernel) | KNN (k=5) | CNN (Research - 10,000 Images, 100 Classes)* |
+| Preprocessing Stage | Random Forest | SVM (RBF Kernel) | KNN (k=5, cosine) | CNN (Research - 10,000 Images, 100 Classes)* |
 |---|---|---|---|---|
-| **Stage 0 (No Preprocessing / Resize)** | **45.67%** | **67.17%** | **46.00%** | **2.90%** |
-| **Stage 1 (Noise Blur)** | **53.33%** | **69.50%** | **41.83%** | **1.70%** |
-| **Stage 2 (Noise + Contrast)** | **50.83%** | **69.17%** | **45.33%** | **1.85%** |
-| **Stage 3 (Noise + Contrast + Edge)** | **41.33%** | **64.50%** | **46.67%** | **2.55%** |
-| **Stage 4 (NLMeans + Contrast Stretch)** | **46.50%** | **67.83%** | **39.83%** | **2.10%** |
-| **Stage 5 (Morph Opening + CLAHE)** | **43.17%** | **66.83%** | **47.83%** | **2.75%** |
-| **Stage 6 (Bilateral + CLAHE + Unsharp)** | **44.00%** | **67.83%** | **43.50%** | **2.00%** |
-| **Stage 7 (Wavelet + CLAHE + Sharpen)** | **41.17%** | **64.33%** | **46.50%** | **2.50%** |
+| **Stage 0 (No Preprocessing / Resize)** | **47.50%** | **69.67%** | **52.83%** | **50.60%** |
+| **Stage 1 (Noise Blur)** | **49.17%** | **69.00%** | **51.17%** | **47.90%** |
+| **Stage 2 (Noise + Contrast)** | **48.33%** | **70.17%** | **54.17%** | **46.80%** |
+| **Stage 3 (Noise + Contrast + Edge)** | **46.50%** | **66.83%** | **52.83%** | **43.40%** |
+| **Stage 4 (NLMeans + Contrast Stretch)** | **44.17%** | **68.50%** | **50.00%** | **46.45%** |
+| **Stage 5 (Morph Opening + CLAHE)** | **45.50%** | **69.83%** | **51.33%** | **44.45%** |
+| **Stage 6 (Bilateral + CLAHE + Unsharp)** | **45.67%** | **69.50%** | **52.17%** | **42.05%** |
+| **Stage 7 (Wavelet + CLAHE + Sharpen)** | **42.00%** | **67.00%** | **50.33%** | **41.20%** |
 
-*Analisis Akurasi: Melalui modifikasi fitur Hybrid (GLCM + HOG) dan pencarian hyperparameter optimal, model tradisional SVM berhasil mempertahankan kinerja unggul di seluruh rentang pengolahan citra. SVM mencapai akurasi tertinggi sebesar **69.50%** pada Stage 1 (Gaussian + Median Blur) dan **69.17%** pada Stage 2 (CLAHE + Gamma). Menariknya, penajaman tepi spasial yang agresif (seperti Unsharp Masking pada Stage 3 atau Wavelet/Bilateral pada Stage 7) cenderung menurunkan akurasi model tradisional karena memperkuat noise berfrekuensi tinggi dari latar belakang yang merusak konsistensi deskriptor tekstur mikro GLCM. Untuk CNN (RESEARCH PURPOSES), model diimplementasikan menggunakan **PyTorch (CUDA 12.4)** dan mengklasifikasikan seluruh **100 kelas (10.000 citra)** pada resolusi $256 \times 256$ piksel dengan akselerasi GPU native Windows. Rendahnya akurasi CNN (Stage 0: 2.90%) pada 5 epoch disebabkan oleh kompleksitas tinggi tugas klasifikasi 100 kelas dengan data yang sangat terbatas (hanya 80 gambar latihan per kelas) serta jumlah epoch yang sangat singkat untuk melatih model dari nol (from scratch).*
+*Analisis Akurasi: Hasil eksekusi terbaru menunjukkan SVM tetap menjadi model tradisional paling stabil pada seluruh stage, dengan akurasi terbaik **70.17% pada Stage 2 (Noise + Contrast)**. Stage 5 dan Stage 6 juga kompetitif (**69.83%** dan **69.50%**), sedangkan preprocessing yang terlalu agresif pada Stage 7 menurunkan performa tradisional ke **67.00%** pada SVM. CNN research sekarang memakai EfficientNet-B0 pretrained sehingga akurasinya jauh lebih tinggi daripada CNN from-scratch lama; hasil terbaik CNN muncul pada Stage 0 (**50.60%**) untuk tugas 100 kelas.*
+
+Hasil fitur setiap stage disimpan sebagai artefak terkompresi di folder `results/` dengan pola nama `result_extract_stage_X.csv.gz`. Jika file stage sudah ada, notebook melewati proses penulisan ulang.
+
+### Ringkasan Waktu Eksekusi Model
+| Stage | Random Forest Train | SVM Train | KNN Train | CNN Execute / Train |
+|---|---:|---:|---:|---:|
+| Stage 0 | 0.55s | 1.11s | 0.01s | 14.30s |
+| Stage 1 | 0.60s | 0.98s | 0.01s | 14.24s |
+| Stage 2 | 0.59s | 1.00s | 0.01s | 120.13s |
+| Stage 3 | 0.63s | 1.09s | 0.01s | 151.80s |
+| Stage 4 | 0.60s | 1.01s | 0.01s | 173.86s |
+| Stage 5 | 0.78s | 1.08s | 0.01s | 118.59s |
+| Stage 6 | 0.59s | 1.01s | 0.01s | 129.12s |
+| Stage 7 | 0.63s | 1.03s | 0.01s | 536.91s |
 
 ---
 
@@ -176,7 +197,7 @@ Kami melatih tiga model klasifikasi utama (Random Forest, SVM, dan KNN) mengguna
 # VIII. Evaluasi dengan Confusion Matrix
 Setiap model dievaluasi untuk melihat tingkat keberhasilan pengelompokan prediksi benar vs salah. Visualisasi matriks kebingungan diatur agar tidak menampilkan angka kuantitatif mentah (`include_values=False`) untuk mencegah teks yang saling bertumpuk dan tidak rapi pada sel grid.
 
-Berikut adalah Confusion Matrix dari model terbaik kami (**SVM RBF pada Stage 1** yang memperoleh akurasi tertinggi **69.50%**):
+Model tradisional terbaik pada eksekusi terbaru adalah **SVM RBF pada Stage 2** dengan akurasi **70.17%**. Gambar berikut masih menampilkan contoh confusion matrix SVM dari Stage 1 sebagai visual pendukung evaluasi kelas:
 
 <p align="center">
   <img src="assets/svm_stage1_confusion_matrix.png" alt="SVM Stage 1 Confusion Matrix" />
@@ -242,24 +263,25 @@ Keberadaan gambar rusak/parsial ini sebenarnya adalah **fitur, bukan bug**, yang
 3. **🛡️ Pertahanan & Pengawasan**: Identifikasi pesawat sipil vs militer dari radar imaging atau citra satelit.
 4. **📚 Arsip Penerbangan**: Pelabelan otomatis arsip foto pesawat historis dan sistem pencarian berbasis kemiripan visual.
 
-> Meskipun akurasi ~64-69.5% terlihat rendah, dalam investigasi kecelakaan, output berupa *5 kandidat tipe pesawat teratas* sudah mempersempit pencarian dari 100+ tipe menjadi 5 kemungkinan, yang sangat mempercepat kerja investigator.
+> Meskipun akurasi ~67-70% terlihat belum sempurna, dalam investigasi kecelakaan, output berupa *5 kandidat tipe pesawat teratas* sudah mempersempit pencarian dari 100+ tipe menjadi 5 kemungkinan, yang sangat mempercepat kerja investigator.
 
 ---
 
-### E. Mengapa PCA Tidak Dapat Membantu Model?
+### E. Mengapa PCA (150 Komponen) Membantu Model?
 
-PCA justru **menurunkan akurasi SVM** karena:
+PCA sekarang menjadi bagian utama pipeline setelah standardisasi fitur, dan terbukti membantu kestabilan model:
 
-1. **PCA memilih komponen berdasarkan varians tertinggi, bukan diskriminasi kelas.** Varians tinggi pada fitur HOG di sudut gambar (langit/apron yang bervariasi) bukan sinyal kelas pesawat, melainkan noise. PCA memilihnya sebagai "penting", lalu membuang fitur spasial posisi-spesifik yang sebenarnya krusial.
-2. **HOG menyimpan informasi bentuk secara lokal.** Informasi "mesin di sayap kanan pada cell [3,8]" hancur ketika PCA merotasi dan mencampur semua dimensi secara global.
+1. **Mereduksi curse of dimensionality.** Fitur gabungan GLCM + HOG menghasilkan 4.412 dimensi. PCA menyusutkannya menjadi 150 komponen yang lebih padat sehingga KNN dan SVM tidak terlalu dipengaruhi noise dimensi tinggi.
+2. **Mencegah data leakage.** StandardScaler dan PCA di-fit hanya pada `X_train`, lalu dipakai untuk mentransformasi `X_test`.
+3. **Mempercepat training.** Setelah PCA, SVM RBF selesai sekitar 1 detik per stage dan KNN training praktis instan.
 
-| Konfigurasi | Akurasi (estimasi) |
+| Konfigurasi Saat Ini | Hasil Utama |
 |-------------|-------------------|
-| SVM + HOG + GLCM (full) | ~64-69.5% |
-| SVM + PCA(95% var) + HOG + GLCM | ~45-50% |
-| KNN + PCA(95% var) + HOG + GLCM | ~50-55% *(PCA justru membantu KNN)* |
+| GLCM + HOG + StandardScaler + PCA(150) + SVM RBF | Akurasi terbaik **70.17%** pada Stage 2 |
+| GLCM + HOG + StandardScaler + PCA(150) + KNN cosine | Akurasi terbaik **54.17%** pada Stage 2 |
+| GLCM + HOG + StandardScaler + PCA(150) + Random Forest | Akurasi terbaik **49.17%** pada Stage 1 |
 
-> **Khusus KNN**, PCA membantu karena mengurangi *curse of dimensionality* sehingga jarak Euclidean menjadi lebih bermakna. Namun untuk SVM yang kuat di dimensi tinggi, PCA kontraproduktif.
+> **Kesimpulan:** PCA 150 komponen adalah kompromi yang bagus untuk pipeline ini: cukup kecil untuk cepat, tetapi masih mempertahankan informasi visual penting bagi SVM.
 
 ---
 
@@ -299,7 +321,7 @@ Dengan 3 kelas, model mudah "menghapal" tanpa belajar fitur yang robust, yang me
 | Skenario | Estimasi Akurasi SVM |
 |----------|---------------------|
 | 1.000 gambar asli (tanpa augmentasi) | ~45-50% |
-| 3.000 gambar (dengan augmentasi 3x) | ~64-69.5% |
+| 3.000 gambar (dengan augmentasi 3x) | ~67-70% |
 
 Augmentasi flip + rotate meningkatkan akurasi SVM sekitar **10-15 persentase poin** dan meningkatkan stabilitas model secara keseluruhan.
 
@@ -307,16 +329,11 @@ Augmentasi flip + rotate meningkatkan akurasi SVM sekitar **10-15 persentase poi
 
 ### I. Perbandingan Model Tradisional (GLCM + HOG) vs Deep Learning (CNN) [RESEARCH PURPOSES]
 
-Pada bagian akhir pemodelan, kami melatih arsitektur **CNN (Convolutional Neural Network)** sederhana sebagai bahan perbandingan riset. Berikut adalah analisis perbandingan antara metode ekstraksi fitur manual (*handcrafted*) dengan ekstraksi fitur otomatis berbasis deep learning:
+Pada bagian akhir pemodelan, kami menggunakan arsitektur **CNN EfficientNet-B0 pretrained** sebagai bahan perbandingan riset. Berikut adalah analisis perbandingan antara metode ekstraksi fitur manual (*handcrafted*) dengan ekstraksi fitur otomatis berbasis deep learning:
 
 #### 1. Kebutuhan Data Latih (Data Hunger)
-- **Model Tradisional (SVM / RF + GLCM + HOG)**: Menggunakan fitur yang didefinisikan secara matematis (seperti korelasi keabuan spasial dan distribusi arah gradien tepi). Karena fiturnya sudah 'jadi', model SVM dengan regularisasi yang tepat dapat belajar dengan sangat efisien pada dataset kecil (~3.000 citra augmented, ~300 per kelas) dan mencapai akurasi optimal (~64-69.5%).
-- **Deep Learning (CNN, PyTorch)**: CNN harus mempelajari semua filter konvolusi (fitur tepi, tekstur, bentuk) dari awal (dari nilai piksel mentah). Pada dataset terbatas dengan 5 epoch, model CNN cenderung *underfitting* (akurasi Stage 0: 2.90% pada 100 kelas, 10.000 citra) karena parameter bobot belum terkonvergensi. Ini adalah perilaku yang diharapkan yang disebabkan oleh beberapa faktor kunci:
-  1. **Kompleksitas Kelas**: CNN dilatih pada seluruh **100 kelas** (10.000 citra, hanya 100 citra per kelas). Probabilitas tebakan acak (random guess) hanya **1.00%**, sehingga akurasi **2.90%** sudah lebih baik dari acak tetapi sangat rendah karena ruang pencarian kelas yang sangat luas. Sebaliknya, model tradisional dilatih pada subset terpilih berisi **10 kelas** (3.000 citra augmented, 300 citra per kelas, tebakan acak 10.00%).
-  2. **Data Hunger**: Jaringan konvolusional mendalam membutuhkan ribuan citra per kelas untuk menyetel parameter bobot di lapisan konvolusi secara mandiri. Dengan hanya 80 citra latih per kelas, CNN mengalami *underfitting* yang parah.
-  3. **Waktu Pelatihan Terbatas**: 5 epoch sangat tidak memadai bagi CNN untuk mengoptimalkan loss Sparse Categorical Crossentropy dari nol. CNN membutuhkan ratusan epoch, scheduler learning rate, dan arsitektur yang lebih kompleks untuk konvergen.
-  4. **Spesifikasi Input Grayscale**: Input 1-saluran keabuan membatasi informasi visual (warna) yang dapat digunakan model CNN untuk memisahkan kelas pesawat halus (fine-grained class).
-  5. **Fitur Handcrafted Lebih Terarah**: GLCM dan HOG adalah representasi fitur berbasis rumus matematika yang langsung menargetkan statistik tekstur (GLCM) dan outline garis kontur (HOG). Sementara CNN harus mempelajari filter-filter ini dari nol, yang mustahil dilakukan secara optimal dalam 5 epoch pada data kecil.
+- **Model Tradisional (SVM / RF + GLCM + HOG)**: Menggunakan fitur yang didefinisikan secara matematis (seperti korelasi keabuan spasial dan distribusi arah gradien tepi). Karena fiturnya sudah 'jadi', model SVM dengan regularisasi yang tepat dapat belajar dengan sangat efisien pada dataset kecil (~3.000 citra augmented, ~300 per kelas) dan mencapai akurasi optimal (~67-70%).
+- **Deep Learning (CNN, PyTorch)**: CNN research menggunakan EfficientNet-B0 pretrained, sehingga tidak lagi belajar semua filter dari nol. Meski begitu, tugasnya tetap lebih sulit karena CNN mengevaluasi **100 kelas penuh** (10.000 citra), sedangkan model tradisional memakai subset 10 kelas komersial. Hasil terbaik CNN adalah **50.60%** pada Stage 0, dan preprocessing tertentu justru menurunkan performa karena mengubah distribusi visual yang sudah cocok dengan bobot ImageNet.
 
 #### 2. Ketersediaan Informasi Warna/Saluran
 Masukan citra yang digunakan berupa citra grayscale saluran tunggal (`(256, 256, 1)`). Hal ini membatasi CNN untuk memanfaatkan informasi warna (seperti warna cat maskapai komersial) untuk pembeda kelas. Di sisi lain, HOG dan GLCM memang dirancang khusus untuk memetakan deskriptor gradien dan tekstur keabuan secara deterministik tanpa bergantung pada warna.
@@ -326,10 +343,10 @@ Masukan citra yang digunakan berupa citra grayscale saluran tunggal (`(256, 256,
 | Pendekatan | Waktu Latih | Kebutuhan Memori | Kemudahan Interpretasi |
 |---|---|---|---|
 | **GLCM + HOG + SVM** (3.000 citra, 10 kelas) | Instan (< 2 detik) | Sangat Rendah | Sedang (Statistik Fitur Spasial) |
-| **CNN PyTorch (5 Epoch)** (10.000 citra, 100 kelas, GPU) | ~5-10 menit (RTX 3050 4GB) | Tinggi (VRAM) | Rendah (*Black Box* Jaringan Saraf) |
+| **CNN EfficientNet-B0 (5 Epoch / checkpoint)** (10.000 citra, 100 kelas, GPU) | ~14 detik saat load checkpoint, hingga ~9 menit saat training Stage 7 | Tinggi (VRAM) | Rendah (*Black Box* Jaringan Saraf) |
 
 #### Kesimpulan
-Untuk tugas klasifikasi citra dengan jumlah sampel terbatas per kelas (seperti kasus dataset FGVC-Aircraft subset kita), **pendekatan kombinasi fitur Handcrafted (GLCM + HOG) + Classifier SVM** secara signifikan lebih unggul, efisien, dan memberikan tingkat akurasi yang lebih tinggi dibandingkan dengan melatih model CNN sederhana dari nol (*from scratch*). CNN memerlukan ribuan data tambahan atau pemanfaatan *Transfer Learning* (model pre-trained seperti ResNet/MobileNet) untuk dapat menandingi performa SVM di dataset ini.
+Untuk tugas klasifikasi citra dengan jumlah sampel terbatas per kelas (seperti kasus dataset FGVC-Aircraft subset 10 kelas), **pendekatan kombinasi fitur Handcrafted (GLCM + HOG) + SVM** tetap paling efisien dan akurat. Transfer learning EfficientNet-B0 sudah jauh lebih kuat daripada CNN sederhana dari nol, tetapi masih kalah dari SVM pada eksperimen ini karena target CNN mencakup 100 kelas penuh.
 
 ---
 

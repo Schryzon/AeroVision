@@ -224,3 +224,12 @@ dataset/**/*.png
 models/
 hasil_ekstraksi*
 fgvc-aircraft/
+cache/
+results/
+/scratch/print*.py
+/scratch/search*.py
+/scratch/inspect*.py
+/scratch/apply*.py
+/scratch/diagnose*.py
+/scratch/find*.py
+/scratch/test*.py
