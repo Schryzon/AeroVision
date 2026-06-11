@@ -49,22 +49,36 @@ Untuk mempermudah eksperimen tanpa konfigurasi lokal, Anda dapat membuka masing-
 ### 1. Persiapan Dataset
 1. Unduh dataset resmi **FGVC-Aircraft** dari [Kaggle](https://www.kaggle.com/datasets/asdasdasasdas/fgvcaircraft) atau situs resminya.
 2. Pastikan file CSV (`train.csv`, `val.csv`, `test.csv`) berada di sub-folder `fgvc-aircraft/`.
-3. Letakkan seluruh file citra `.jpg` di direktori `fgvc-aircraft/fgvc-aircraft-2013b/fgvc-aircraft-2013b/data/images/`.
+3. Letakkan seluruh file citra `.jpg` di direktori:
+   `fgvc-aircraft/fgvc-aircraft-2013b/fgvc-aircraft-2013b/data/images/`
 
 ### 2. Menjalankan di Google Colab (Rekomendasi Cepat)
-1. Unggah berkas notebook pilihan Anda (`Stage1_AeroVision.ipynb`, `Stage2_AeroVision.ipynb`, atau `Stage3_AeroVision.ipynb`) ke Google Drive.
-2. Unggah direktori dataset `fgvc-aircraft` ke Google Drive Anda di bawah folder utama: `My Drive/fgvc-aircraft/`.
-3. Jalankan sel pertama (Cell 0) untuk menghubungkan akun Google Drive Anda. Sel tersebut secara otomatis akan mengonfigurasi direktori, menginstal dependensi yang tercantum di `requirements.txt`, dan menyelaraskan seluruh alur kerja proyek secara instan.
+1. Klik tombol **Open In Colab** pada tabel di atas untuk membuka notebook yang ingin Anda jalankan (misalnya, **Stage 2: Contrast Enhancement** atau **Complete Pipeline**).
+2. Pastikan folder dataset `fgvc-aircraft` sudah Anda unggah ke Google Drive Anda pada direktori utama: `My Drive/fgvc-aircraft/`.
+3. Jalankan sel pertama (Cell 0) untuk menghubungkan akun Google Drive Anda. Sel tersebut secara otomatis akan menghubungkan Drive, menginstal pustaka yang dibutuhkan dari `requirements.txt`, dan menyusun struktur folder proyek secara otomatis.
 
-### 3. Menjalankan di Mesin Lokal (Windows)
+### 3. Menjalankan di Mesin Lokal (Windows/WSL)
 Pastikan Anda menggunakan Python 3.12 (dikelola melalui Scoop atau package manager pilihan Anda).
-1. Buka PowerShell 5.1 di folder proyek Anda.
-2. Pasang pustaka dependensi yang dibutuhkan:
+1. Buka PowerShell 5.1 di direktori proyek `AeroVision`.
+2. Pasang dependensi yang dibutuhkan:
    ```powershell
    pip install -r requirements.txt
    ```
-3. Jalankan editor notebook atau VS Code, lalu buka salah satu file notebook (`Stage1_AeroVision.ipynb`, `Stage2_AeroVision.ipynb`, atau `Stage3_AeroVision.ipynb`).
-4. Pilih kernel Python 3.12 Anda dan jalankan sel kode secara berurutan.
+3. **Eksekusi Otomatis (Rekomendasi Skrip)**:
+   Kami menyediakan skrip PowerShell untuk menjalankan notebook secara otomatis dan langsung memperbarui hasilnya secara in-place (*headless execution*):
+   * **Native Windows**: Jalankan perintah berikut untuk mengeksekusi semua notebook secara berurutan:
+     ```powershell
+     .\run_notebook_native.ps1 -notebooks all
+     ```
+     Atau untuk mengeksekusi notebook tertentu saja:
+     ```powershell
+     .\run_notebook_native.ps1 -notebooks Stage2_AeroVision
+     ```
+   * **WSL (Ubuntu)**: Jika Anda menggunakan WSL untuk pemrosesan berbasis Linux, jalankan:
+     ```powershell
+     .\run_notebook_in_wsl.ps1 -notebooks all
+     ```
+4. **Eksekusi Manual**: Jalankan editor Jupyter Notebook atau VS Code, buka file notebook pilihan Anda (misalnya `Stage2_AeroVision.ipynb`), pilih kernel Python 3.12, dan jalankan sel kode satu per satu.
 
 ---
 
@@ -157,50 +171,57 @@ Kombinasi ini menjaga informasi bentuk/tekstur utama, menekan noise dimensi ting
 - **Normalisasi + PCA**: Kolom fitur dinormalisasi menggunakan Standardisasi Z-Score, lalu diproyeksikan ke 150 komponen PCA yang hanya di-fit pada training set untuk mencegah data leakage.
 
 # VII. Pemodelan & Optimasi Hyperparameter
-Kami melatih tiga model klasifikasi utama (Random Forest, SVM, dan KNN) menggunakan representasi PCA 150 komponen (dengan seed acak `random_state=67`), serta model CNN transfer learning untuk tujuan riset:
-- **Random Forest**: Menggunakan `n_estimators=100` untuk mengurangi variance ensemble.
-- **SVM**: RBF Kernel dengan parameter regulasi `C=15.0` dan `gamma='scale'`.
-- **KNN**: Menggunakan `k=5` dengan metrik jarak `cosine`.
-- **CNN (Research)**: Model PyTorch berbasis **EfficientNet-B0 ImageNet pretrained**. Input grayscale diulang menjadi 3 channel, sebagian besar backbone dibekukan, blok akhir di-*fine-tune*, dan classifier diganti menjadi 100 kelas. Model dilatih/di-load per stage pada **seluruh 10.000 citra (100 kelas)**.
+Kami melatih tiga model klasifikasi utama (Random Forest, SVM, dan KNN) menggunakan representasi PCA 150 komponen (dengan seed acak `random_state=67`), serta model CNN berbasis transfer learning untuk tujuan riset:
+- **Random Forest**: Menggunakan `n_estimators=150` dengan `criterion='entropy'` dan `max_depth=15` untuk optimasi keputusan ensemble.
+- **SVM**: RBF Kernel dengan parameter regulasi `C=5.0` dan `gamma='scale'`.
+- **KNN**: Menggunakan `k=9` dengan metrik `cosine` dan pembobotan jarak (`weights='distance'`).
+- **CNN (Research)**: Model PyTorch berbasis **EfficientNet-B0** pretrained. Input grayscale saluran tunggal diulang menjadi 3 channel, backbone dibekukan sebagian besar (kecuali blok akhir 7-8 yang di-fine-tune), dan output classifier diselaraskan menjadi 10 kelas. Model dilatih selama 10 epoch pada dataset komersial 10 kelas (3.000 citra augmented), menghasilkan konvergensi yang sangat tinggi.
 
-### Hasil Akurasi Eksperimen (Mode: `diverse_subset` - 10 Kelas Komersial, 16 Levels Quantization, Hybrid GLCM + HOG)
-| Preprocessing Stage | Random Forest | SVM (RBF Kernel) | KNN (k=5, cosine) | CNN (Research - 10,000 Images, 100 Classes)* |
+### Hasil Akurasi Eksperimen (Mode: `diverse_subset` - 10 Kelas Komersial, 32 Levels Quantization, Hybrid GLCM + HOG)
+| Preprocessing Stage | Random Forest | SVM (RBF Kernel) | KNN (k=9, cosine) | CNN (EfficientNet-B0, 10 Epochs)* |
 |---|---|---|---|---|
-| **Stage 0 (No Preprocessing / Resize)** | **47.50%** | **69.67%** | **52.83%** | **50.60%** |
-| **Stage 1 (Noise Blur)** | **49.17%** | **69.00%** | **51.17%** | **47.90%** |
-| **Stage 2 (Noise + Contrast)** | **48.33%** | **70.17%** | **54.17%** | **46.80%** |
-| **Stage 3 (Noise + Contrast + Edge)** | **46.50%** | **66.83%** | **52.83%** | **43.40%** |
-| **Stage 4 (NLMeans + Contrast Stretch)** | **44.17%** | **68.50%** | **50.00%** | **46.45%** |
-| **Stage 5 (Morph Opening + CLAHE)** | **45.50%** | **69.83%** | **51.33%** | **44.45%** |
-| **Stage 6 (Bilateral + CLAHE + Unsharp)** | **45.67%** | **69.50%** | **52.17%** | **42.05%** |
-| **Stage 7 (Wavelet + CLAHE + Sharpen)** | **42.00%** | **67.00%** | **50.33%** | **41.20%** |
+| **Stage 0 (No Preprocessing / Resize)** | 53.33% | 69.50% | 54.50% | **92.67%** |
+| **Stage 1 (Noise Blur)** | 50.50% | 68.83% | 54.50% | **89.50%** |
+| **Stage 2 (Noise + Contrast)** | 50.33% | **70.67%** | **57.50%** | **91.50%** |
+| **Stage 3 (Noise + Contrast + Edge)** | 46.83% | 66.67% | 54.00% | **92.17%** |
+| **Stage 4 (NLMeans + Contrast Stretch)** | 49.50% | 68.33% | 53.17% | **90.50%** |
+| **Stage 5 (Morph Opening + CLAHE)** | 51.17% | **70.67%** | 56.83% | **90.83%** |
+| **Stage 6 (Bilateral + CLAHE + Unsharp)** | 47.83% | 69.33% | 55.17% | **89.33%** |
+| **Stage 7 (Wavelet + CLAHE + Sharpen)** | 46.83% | 67.00% | 50.67% | **89.83%** |
 
-*Analisis Akurasi: Hasil eksekusi terbaru menunjukkan SVM tetap menjadi model tradisional paling stabil pada seluruh stage, dengan akurasi terbaik **70.17% pada Stage 2 (Noise + Contrast)**. Stage 5 dan Stage 6 juga kompetitif (**69.83%** dan **69.50%**), sedangkan preprocessing yang terlalu agresif pada Stage 7 menurunkan performa tradisional ke **67.00%** pada SVM. CNN research sekarang memakai EfficientNet-B0 pretrained sehingga akurasinya jauh lebih tinggi daripada CNN from-scratch lama; hasil terbaik CNN muncul pada Stage 0 (**50.60%**) untuk tugas 100 kelas.*
+*Analisis Akurasi: Hasil eksekusi terbaru menunjukkan penyelarasan target kelas CNN menjadi 10 kelas komersial serta penambahan latihan menjadi 10 epoch berhasil mendongkrak performa CNN hingga mencapai puncak akurasi **92.67%** pada Stage 0 dan **92.17%** pada Stage 3. Untuk model tradisional, SVM tetap menjadi model paling stabil pada seluruh stage, mencapai akurasi terbaiknya sebesar **70.67%** pada Stage 2 dan Stage 5.*
 
 Hasil fitur setiap stage disimpan sebagai artefak terkompresi di folder `results/` dengan pola nama `result_extract_stage_X.csv.gz`. Jika file stage sudah ada, notebook melewati proses penulisan ulang.
 
-### Ringkasan Waktu Eksekusi Model
-| Stage | Random Forest Train | SVM Train | KNN Train | CNN Execute / Train |
+### Ringkasan Waktu Eksekusi Model (Kondisi Ter-cache)
+| Stage | Preprocessing (Prep) | Feature Extraction (Feat) | Traditional ML | CNN Execute / Train |
 |---|---:|---:|---:|---:|
-| Stage 0 | 0.55s | 1.11s | 0.01s | 14.30s |
-| Stage 1 | 0.60s | 0.98s | 0.01s | 14.24s |
-| Stage 2 | 0.59s | 1.00s | 0.01s | 120.13s |
-| Stage 3 | 0.63s | 1.09s | 0.01s | 151.80s |
-| Stage 4 | 0.60s | 1.01s | 0.01s | 173.86s |
-| Stage 5 | 0.78s | 1.08s | 0.01s | 118.59s |
-| Stage 6 | 0.59s | 1.01s | 0.01s | 129.12s |
-| Stage 7 | 0.63s | 1.03s | 0.01s | 536.91s |
+| Stage 0 | 0.1s | 3.0s | 4.4s | 55.7s |
+| Stage 1 | 0.4s | 3.1s | 4.3s | 52.1s |
+| Stage 2 | 1.3s | 3.1s | 4.3s | 51.8s |
+| Stage 3 | 6.6s | 3.2s | 4.3s | 52.0s |
+| Stage 4 | 16.1s | 3.2s | 4.6s | 51.9s |
+| Stage 5 | 0.7s | 3.3s | 4.9s | 51.9s |
+| Stage 6 | 2.4s | 3.2s | 4.4s | 51.8s |
+| Stage 7 | 90.6s | 3.3s | 8.2s | 51.8s |
 
 ---
-
 
 # VIII. Evaluasi dengan Confusion Matrix
 Setiap model dievaluasi untuk melihat tingkat keberhasilan pengelompokan prediksi benar vs salah. Visualisasi matriks kebingungan diatur agar tidak menampilkan angka kuantitatif mentah (`include_values=False`) untuk mencegah teks yang saling bertumpuk dan tidak rapi pada sel grid.
 
-Model tradisional terbaik pada eksekusi terbaru adalah **SVM RBF pada Stage 2** dengan akurasi **70.17%**. Gambar berikut masih menampilkan contoh confusion matrix SVM dari Stage 1 sebagai visual pendukung evaluasi kelas:
+Model tradisional terbaik pada eksekusi terbaru adalah **SVM RBF pada Stage 5** dengan akurasi **70.67%**, sedangkan model deep learning terbaik adalah **CNN (EfficientNet-B0) pada Stage 0** dengan akurasi **92.67%**.
 
+Berikut adalah visualisasi confusion matrix untuk kedua model terbaik tersebut:
+
+#### CNN (Stage 0) Confusion Matrix
 <p align="center">
-  <img src="assets/svm_stage1_confusion_matrix.png" alt="SVM Stage 1 Confusion Matrix" />
+  <img src="assets/cnn_stage0_confusion_matrix.png" alt="CNN Stage 0 Confusion Matrix" />
+</p>
+
+#### SVM (Stage 5) Confusion Matrix
+<p align="center">
+  <img src="assets/svm_stage5_confusion_matrix.png" alt="SVM Stage 5 Confusion Matrix" />
 </p>
 
 
@@ -277,9 +298,9 @@ PCA sekarang menjadi bagian utama pipeline setelah standardisasi fitur, dan terb
 
 | Konfigurasi Saat Ini | Hasil Utama |
 |-------------|-------------------|
-| GLCM + HOG + StandardScaler + PCA(150) + SVM RBF | Akurasi terbaik **70.17%** pada Stage 2 |
-| GLCM + HOG + StandardScaler + PCA(150) + KNN cosine | Akurasi terbaik **54.17%** pada Stage 2 |
-| GLCM + HOG + StandardScaler + PCA(150) + Random Forest | Akurasi terbaik **49.17%** pada Stage 1 |
+| GLCM + HOG + StandardScaler + PCA(150) + SVM RBF | Akurasi terbaik **70.67%** pada Stage 2 dan Stage 5 |
+| GLCM + HOG + StandardScaler + PCA(150) + KNN (k=9, cosine) | Akurasi terbaik **57.50%** pada Stage 2 |
+| GLCM + HOG + StandardScaler + PCA(150) + Random Forest | Akurasi terbaik **53.33%** pada Stage 0 |
 
 > **Kesimpulan:** PCA 150 komponen adalah kompromi yang bagus untuk pipeline ini: cukup kecil untuk cepat, tetapi masih mempertahankan informasi visual penting bagi SVM.
 
@@ -329,24 +350,24 @@ Augmentasi flip + rotate meningkatkan akurasi SVM sekitar **10-15 persentase poi
 
 ### I. Perbandingan Model Tradisional (GLCM + HOG) vs Deep Learning (CNN) [RESEARCH PURPOSES]
 
-Pada bagian akhir pemodelan, kami menggunakan arsitektur **CNN EfficientNet-B0 pretrained** sebagai bahan perbandingan riset. Berikut adalah analisis perbandingan antara metode ekstraksi fitur manual (*handcrafted*) dengan ekstraksi fitur otomatis berbasis deep learning:
+Pada bagian akhir pemodelan, kami menggunakan arsitektur **CNN berbasis Transfer Learning (EfficientNet-B0)** sebagai bahan perbandingan riset. Berikut adalah analisis perbandingan antara metode ekstraksi fitur manual (*handcrafted*) dengan ekstraksi fitur otomatis berbasis deep learning:
 
 #### 1. Kebutuhan Data Latih (Data Hunger)
-- **Model Tradisional (SVM / RF + GLCM + HOG)**: Menggunakan fitur yang didefinisikan secara matematis (seperti korelasi keabuan spasial dan distribusi arah gradien tepi). Karena fiturnya sudah 'jadi', model SVM dengan regularisasi yang tepat dapat belajar dengan sangat efisien pada dataset kecil (~3.000 citra augmented, ~300 per kelas) dan mencapai akurasi optimal (~67-70%).
-- **Deep Learning (CNN, PyTorch)**: CNN research menggunakan EfficientNet-B0 pretrained, sehingga tidak lagi belajar semua filter dari nol. Meski begitu, tugasnya tetap lebih sulit karena CNN mengevaluasi **100 kelas penuh** (10.000 citra), sedangkan model tradisional memakai subset 10 kelas komersial. Hasil terbaik CNN adalah **50.60%** pada Stage 0, dan preprocessing tertentu justru menurunkan performa karena mengubah distribusi visual yang sudah cocok dengan bobot ImageNet.
+- **Model Tradisional (SVM / RF + GLCM + HOG)**: Menggunakan fitur yang didefinisikan secara matematis. Karena fiturnya sudah 'jadi', model SVM dengan regularisasi RBF C=5.0 dapat belajar dengan sangat efisien pada dataset kecil (~3.000 citra augmented, ~300 per kelas) dan mencapai akurasi optimal (**~70.67%**).
+- **Deep Learning (CNN, PyTorch)**: Melalui fine-tuning model pretrained **EfficientNet-B0** untuk target 10 kelas selama 10 epoch, model CNN berhasil menembus akurasi **92.67%** (Stage 0). Ini menunjukkan bahwa transfer learning memecahkan keterbatasan *data hunger* pada model konvolusi di dataset terbatas.
 
 #### 2. Ketersediaan Informasi Warna/Saluran
-Masukan citra yang digunakan berupa citra grayscale saluran tunggal (`(256, 256, 1)`). Hal ini membatasi CNN untuk memanfaatkan informasi warna (seperti warna cat maskapai komersial) untuk pembeda kelas. Di sisi lain, HOG dan GLCM memang dirancang khusus untuk memetakan deskriptor gradien dan tekstur keabuan secara deterministik tanpa bergantung pada warna.
+Masukan citra yang digunakan berupa citra grayscale saluran tunggal (`(256, 256, 1)`). Walau demikian, model CNN (EfficientNet-B0) yang menduplikasi input menjadi 3 channel mampu mengekstrak fitur bentuk/tepi spasial hierarkis yang sangat kuat sehingga mencapai akurasi yang melampaui 92%.
 
 #### 3. Waktu Komputasi dan Kompleksitas
 
-| Pendekatan | Waktu Latih | Kebutuhan Memori | Kemudahan Interpretasi |
-|---|---|---|---|
-| **GLCM + HOG + SVM** (3.000 citra, 10 kelas) | Instan (< 2 detik) | Sangat Rendah | Sedang (Statistik Fitur Spasial) |
-| **CNN EfficientNet-B0 (5 Epoch / checkpoint)** (10.000 citra, 100 kelas, GPU) | ~14 detik saat load checkpoint, hingga ~9 menit saat training Stage 7 | Tinggi (VRAM) | Rendah (*Black Box* Jaringan Saraf) |
+| Pendekatan | Waktu Latih (3.000 Citra) | Kebutuhan Memori | Kemudahan Interpretasi | Akurasi Tertinggi |
+|---|---|---|---|---|
+| **GLCM + HOG + SVM** | Instan (< 5 detik) | Sangat Rendah | Sedang (Statistik Fitur Spasial) | **70.67%** (Stage 2/5) |
+| **CNN (EfficientNet 10 Epochs)** | Cepat (~50-55 detik) | Tinggi (GPU VRAM) | Rendah (*Black Box* Jaringan Saraf) | **92.67%** (Stage 0) |
 
 #### Kesimpulan
-Untuk tugas klasifikasi citra dengan jumlah sampel terbatas per kelas (seperti kasus dataset FGVC-Aircraft subset 10 kelas), **pendekatan kombinasi fitur Handcrafted (GLCM + HOG) + SVM** tetap paling efisien dan akurat. Transfer learning EfficientNet-B0 sudah jauh lebih kuat daripada CNN sederhana dari nol, tetapi masih kalah dari SVM pada eksperimen ini karena target CNN mencakup 100 kelas penuh.
+Untuk tugas klasifikasi citra pada dataset FGVC-Aircraft subset 10 kelas komersial, **model Deep Learning (CNN) dengan Transfer Learning (EfficientNet-B0)** terbukti memberikan akurasi jauh lebih tinggi (**92.67%**) dibandingkan model tradisional (**70.67%**), namun membutuhkan komputasi GPU/VRAM yang lebih intensif. Di sisi lain, **kombinasi GLCM + HOG + SVM** tetap menjadi alternatif yang sangat efisien jika sumber daya komputasi sangat terbatas (misalnya pada CPU atau GPU tanpa VRAM memadai), karena mampu dilatih secara instan dengan akurasi yang cukup kompetitif.
 
 ---
 

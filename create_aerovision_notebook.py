@@ -523,8 +523,8 @@ def generate_notebook(stage_num):
         "   - **Median Blur (kernel_size=3)**: Menjaga batas objek tetap tajam sembari menghilangkan noise impulsif salt-and-pepper sepenuhnya.",
         "",
         "3. **Tahap 2: Peningkatan Kontras (CLAHE & Koreksi Gamma)**",
-        "   - **CLAHE (clip_limit=2.0)**: Meningkatkan kontras lokal pesawat terhadap latar belakang yang bervariasi tanpa membuat area homogen menjadi terlalu jenuh (over-saturated).",
-        "   - **Koreksi Gamma (gamma=0.9)**: Menggeser intensitas sedikit untuk memperjelas detail pada struktur berbayang (seperti bagian bawah pesawat dan mesin).",
+        "   - **CLAHE (clip_limit=1.5)**: Meningkatkan kontras lokal pesawat terhadap latar belakang yang bervariasi tanpa membuat area homogen menjadi terlalu jenuh (over-saturated).",
+        "   - **Koreksi Gamma (gamma=0.8)**: Menggeser intensitas sedikit untuk memperjelas detail pada struktur berbayang (seperti bagian bawah pesawat dan mesin).",
         "",
         "4. **Tahap 3: Penajaman Detail & Tepi (Unsharp Mask & Sharpening)**",
         "   - **Unsharp Masking (sigma=1.0, strength=1.5)**: Mengurangi versi citra yang dihaluskan untuk memperkuat batas-batas tepi yang halus.",
@@ -573,8 +573,8 @@ def generate_notebook(stage_num):
         "",
         "# Stage 2: Contrast Enhancement (2 methods)",
         "def prepro2(image):",
-        "    img = acc.Equalization.clahe(image, clip_limit=2.0)",
-        "    img = acc.Enhancement.gamma_correction(img, gamma=0.9)",
+        "    img = acc.Equalization.clahe(image, clip_limit=1.5)",
+        "    img = acc.Enhancement.gamma_correction(img, gamma=0.8)",
         "    return img",
         "",
         "# Stage 3: Detail/Edge Enhancement (2 methods)",
@@ -719,7 +719,6 @@ def generate_notebook(stage_num):
             "    fn = prepro_fns[stage]",
             "    t0_prep = time.time()",
             "    data_prep = batch_preprocess(data_augmented, fn, f'Stage {stage} ML subset')",
-            "    data_all_prep = batch_preprocess(data_all, fn, f'Stage {stage} CNN full set')",
             "    prep_time = time.time() - t0_prep",
             "    ",
             "    # 2. Ekstraksi Fitur Hybrid (GLCM + HOG) - Check Cache First",
@@ -732,7 +731,7 @@ def generate_notebook(stage_num):
             "        df_features = df_full.drop(columns=['Label', 'Filename'])",
             "    else:",
             "        print(f'  Cache not found. Extracting features for Stage {stage}...')",
-            "        GLCM_LEVELS = 16",
+            "        GLCM_LEVELS = 32",
             "        factor = 256 // GLCM_LEVELS",
             "        glcm_feats_list = []",
             "        for img in data_prep:",
@@ -780,9 +779,9 @@ def generate_notebook(stage_num):
             "    X_test_pca = pca.transform(X_test_scaled)",
             "    ",
             "    # 5. Latih Model Tradisional",
-            "    rf = RandomForestClassifier(n_estimators=100, random_state=67, n_jobs=-1)",
-            "    svm = SVC(C=15.0, kernel='rbf', gamma='scale', random_state=67)",
-            "    knn = KNeighborsClassifier(n_neighbors=5, metric='cosine')",
+            "    rf = RandomForestClassifier(n_estimators=150, criterion='entropy', max_depth=15, random_state=67, n_jobs=-1)",
+            "    svm = SVC(C=5.0, kernel='rbf', gamma='scale', random_state=67)",
+            "    knn = KNeighborsClassifier(n_neighbors=9, weights='distance', metric='cosine')",
             "    ",
             "    rf.fit(X_train_pca, y_train)",
             "    svm.fit(X_train_pca, y_train)",
@@ -797,7 +796,7 @@ def generate_notebook(stage_num):
             "    plot_confusion_matrix(y_test, svm.predict(X_test_pca), f'SVM (Stage {stage}) Confusion Matrix')",
             "    plot_confusion_matrix(y_test, knn.predict(X_test_pca), f'KNN (Stage {stage}) Confusion Matrix')",
             "    ",
-            "    # 6. Latih Model CNN (Research Purposes - 10,000 Images, 100 Classes)",
+            "    # 6. Latih Model CNN (10 Classes)",
             "    cnn_acc = np.nan",
             "    checkpoint_path = f'models/cnn_model_stage{stage}.pth'",
             "    FORCE_RETRAIN_CNN = False",
@@ -824,7 +823,7 @@ def generate_notebook(stage_num):
             "                    param.requires_grad = True",
             "                for param in self.backbone.features[8].parameters():",
             "                    param.requires_grad = True",
-            "                self.backbone.classifier[1] = nn.Linear(1280, 100)",
+            "                self.backbone.classifier[1] = nn.Linear(1280, 10)",
             "            def forward(self, x):",
             "                x = x.repeat(1, 3, 1, 1)",
             "                return self.backbone(x)",
@@ -835,10 +834,10 @@ def generate_notebook(stage_num):
             "        optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=0.0002)",
             "        ",
             "        le_all = LabelEncoder()",
-            "        y_all_encoded = le_all.fit_transform(labels_all)",
+            "        y_all_encoded = le_all.fit_transform(labels_augmented)",
             "        ",
             "        X_train_img, X_test_img, y_train_encoded, y_test_encoded = train_test_split(",
-            "            data_all_prep, y_all_encoded, test_size=0.2, random_state=67",
+            "            data_prep, y_all_encoded, test_size=0.2, random_state=67",
             "        )",
             "        ",
             "        X_train_t = torch.tensor(X_train_img, dtype=torch.float32).unsqueeze(1) / 255.0",
@@ -854,7 +853,7 @@ def generate_notebook(stage_num):
             "            model.load_state_dict(torch.load(checkpoint_path, map_location=device))",
             "        else:",
             "            print(f'  === TRAINING CNN FOR STAGE {stage} ===')",
-            "            for epoch in range(5):",
+            "            for epoch in range(10):",
             "                model.train()",
             "                for inputs, targets in train_loader:",
             "                    inputs, targets = inputs.to(device), targets.to(device)",
@@ -884,6 +883,7 @@ def generate_notebook(stage_num):
             "        y_pred_encoded = np.array(all_preds)",
             "        y_pred_labels = le_all.inverse_transform(y_pred_encoded)",
             "        y_test_all_labels = le_all.inverse_transform(y_test_encoded)",
+            "        plot_confusion_matrix(y_test_all_labels, y_pred_labels, f'CNN (Stage {stage}) Confusion Matrix')",
             "        ",
             "        # Explicit VRAM Cleanup",
             "        del model, optimizer, train_loader, val_loader, X_train_t, y_train_t, X_test_t, y_test_t",
@@ -915,7 +915,7 @@ def generate_notebook(stage_num):
             "        'Stage': f'Stage {stage}',",
             "        'Random Forest': rf_acc,",
             "        'SVM (RBF)': svm_acc,",
-            "        'KNN (k=5)': knn_acc,",
+            "        'KNN (k=9)': knn_acc,",
             "        'CNN (Research)': cnn_acc",
             "    })",
         ])
@@ -1334,11 +1334,11 @@ def generate_notebook(stage_num):
         "Mengekstrak fitur GLCM dan HOG lalu menggabungkannya secara horizontal."
     )
     add_code([
-        "# Kuantisasi citra ke 16 tingkat keabuan untuk meredam noise mikro",
-        "GLCM_LEVELS = 16",
+        "# Kuantisasi citra ke 32 tingkat keabuan untuk meredam noise mikro",
+        "GLCM_LEVELS = 32",
         "factor = 256 // GLCM_LEVELS",
         "",
-        "print(\"Extracting GLCM features with 16 levels and distances=(1, 2)...\", flush=True)",
+        "print(\"Extracting GLCM features with 32 levels and distances=(1, 2)...\", flush=True)",
         "glcm_feats_list = []",
         "for img in data_preprocessed:",
         "    quantized = (img // factor).clip(0, GLCM_LEVELS - 1)",
@@ -1375,7 +1375,7 @@ def generate_notebook(stage_num):
         f"Sel ini mengeksekusi ekstraksi fitur hybrid tekstur GLCM dan bentuk HOG secara cepat pada seluruh citra untuk Tahap {stage_num}.",
         "",
         "**Di Balik Layar (Behind the Scenes):**",
-        "1. **GLCM**: Setiap citra dikuantisasi ke 16 tingkat keabuan untuk meredam noise lokal. Kemudian, properti statistik (Contrast, Dissimilarity, Homogeneity, Energy, Entropy, Correlation, dan ASM) dihitung untuk 2 jarak dan 4 orientasi sudut, menghasilkan 56 fitur tekstur.",
+        "1. **GLCM**: Setiap citra dikuantisasi ke 32 tingkat keabuan untuk meredam noise lokal. Kemudian, properti statistik (Contrast, Dissimilarity, Homogeneity, Energy, Entropy, Correlation, dan ASM) dihitung untuk 2 jarak dan 4 orientasi sudut, menghasilkan 56 fitur tekstur.",
         "2. **HOG**: Citra di-resize ke $96 \\times 96$ piksel, lalu dihitung gradien intensitas horizontal dan vertikal untuk mengompilasi histogram orientasi gradien lokal. Dengan cell size 8x8 dan block size 2x2, diekstrak 4.356 fitur kontur/bentuk fisik pesawat.",
         "3. **Penggabungan**: Fitur tekstur mikro (GLCM) dan fitur bentuk global (HOG) digabungkan menjadi 4.412 fitur per citra, memberikan karakteristik spasial yang sangat kaya dan diskriminatif bagi model pengklasifikasi."
     ])
@@ -1584,7 +1584,7 @@ def generate_notebook(stage_num):
         "Interpreter meregistrasikan objek classifier di memori RAM.",
         "Namespace lokal memori kernel.",
         "Dijalankan sebelum fitting model dimulai.",
-        "Inisialisasi RandomForestClassifier(n_estimators=100, random_state=67), SVC(C=10.0, kernel='rbf', random_state=67), dan KNeighborsClassifier(n_neighbors=3)."
+        "Inisialisasi RandomForestClassifier(n_estimators=150, criterion='entropy', max_depth=15, random_state=67), SVC(C=5.0, kernel='rbf', random_state=67), dan KNeighborsClassifier(n_neighbors=9, weights='distance', metric='cosine')."
     )
     add_code([
         "import time",
@@ -1596,18 +1596,18 @@ def generate_notebook(stage_num):
         "    print('Accuracy:', accuracy_score(y_true, y_pred))",
         "",
         "# Inisialisasi classifier dengan hyperparameter yang telah dioptimalkan",
-        "rf = RandomForestClassifier(n_estimators=100, random_state=67, n_jobs=-1)",
-        "svm = SVC(C=15.0, kernel='rbf', gamma='scale', random_state=67)",
-        "knn = KNeighborsClassifier(n_neighbors=5, metric='cosine')"
+        "rf = RandomForestClassifier(n_estimators=150, criterion='entropy', max_depth=15, random_state=67, n_jobs=-1)",
+        "svm = SVC(C=5.0, kernel='rbf', gamma='scale', random_state=67)",
+        "knn = KNeighborsClassifier(n_neighbors=9, weights='distance', metric='cosine')"
     ])
     add_explanation([
         "Sel ini mendefinisikan fungsi pembantu `generateClassificationReport` untuk mencetak evaluasi metrik kinerja model dan menginisialisasi parameter dasar dari tiga classifier (Random Forest, SVM, dan KNN).",
         "",
         "**Di Balik Layar (Behind the Scenes):**",
         "Fungsi evaluasi memanggil fungsi Scikit-learn `classification_report`, `confusion_matrix`, dan `accuracy_score`. Inisiasi model diatur sebagai berikut:",
-        "- `RandomForestClassifier` dengan 100 estimator pohon keputusan (`n_estimators=100`), seed acak `random_state=67`, dan `n_jobs=-1` untuk pemrosesan paralel multi-core.",
+        "- `RandomForestClassifier` dengan 150 estimator pohon keputusan (`n_estimators=150`), kriteria entropi (`criterion='entropy'`), kedalaman maksimum 15 (`max_depth=15`), seed acak `random_state=67`, dan `n_jobs=-1` untuk pemrosesan paralel multi-core.",
         "- `SVC` (SVM) dengan regularisasi teroptimasi `C=5.0`, kernel non-linear `rbf`, auto-scaling `gamma='scale'`, dan seed acak `random_state=67`.",
-        "- `KNeighborsClassifier` dengan tetangga terdekat $k=5$ dan pembobotan seragam (`weights='uniform'`).",
+        "- `KNeighborsClassifier` dengan tetangga terdekat $k=9$ dan pembobotan berbasis jarak (`weights='distance'`) dengan metrik cosine.",
         "",
         "Penyetelan parameter awal ini memastikan performa model stabil dan terkontrol."
     ])
@@ -1644,7 +1644,7 @@ def generate_notebook(stage_num):
         "Sel ini melatih (fitting) model pengklasifikasi Random Forest pada fitur spasial, mengevaluasi akurasi pengujiannya, dan menyimpan model ke berkas `models/rf_model.joblib`.",
         "",
         "**Di Balik Layar (Behind the Scenes):**",
-        "Program memanggil metode `.fit(X_train, y_train)` Scikit-learn untuk melatih 100 pohon keputusan secara paralel pada subset data latihan. Model kemudian memprediksi sampel pengujian dengan `.predict(X_test)`. Hasil akurasi dievaluasi dan dicetak. Model diekspor menggunakan `joblib.dump` agar dapat dimuat ulang secara instan."
+        "Program memanggil metode `.fit(X_train, y_train)` Scikit-learn untuk melatih 150 pohon keputusan secara paralel pada subset data latihan. Model kemudian memprediksi sampel pengujian dengan `.predict(X_test)`. Hasil akurasi dievaluasi dan dicetak. Model diekspor menggunakan `joblib.dump` agar dapat dimuat ulang secara instan."
     ])
 
     # Cell 39: Train SVM markdown
@@ -1653,12 +1653,12 @@ def generate_notebook(stage_num):
     # Cell 40: Train SVM code
     add_justification(
         "Pelatihan & Evaluasi Support Vector Machine",
-        "Melatih classifier SVM dengan kernel RBF dan regularisasi C=10.0, serta menyimpan model ke models/svm_model.joblib.",
+        "Melatih classifier SVM dengan kernel RBF dan regularisasi C=5.0, serta menyimpan model ke models/svm_model.joblib.",
         "Menguji performa pengklasifikasi margin maksimum non-linear dalam memisahkan sebaran fitur spasial GLCM.",
         "Pengembang membandingkan log output performa model SVM.",
         "Model dilatih di RAM dan diekspor ke models/svm_model.joblib.",
         "Dijalankan sekuensial setelah pelatihan Random Forest selesai.",
-        "Menggunakan regularisasi C=10.0, fitting kernel 'rbf', mencetak skor akurasi testing, dan menyimpan file model menggunakan joblib."
+        "Menggunakan regularisasi C=5.0, fitting kernel 'rbf', mencetak skor akurasi testing, dan menyimpan file model menggunakan joblib."
     )
     add_code([
         "print(\"=== TRAINING SVM ===\")",
@@ -1679,7 +1679,7 @@ def generate_notebook(stage_num):
         "Sel ini melatih model Support Vector Machine (SVM) pada fitur spasial, menguji akurasinya, dan mengekspor model ke dalam file `models/svm_model.joblib`.",
         "",
         "**Di Balik Layar (Behind the Scenes):**",
-        "Program melatih model SVM menggunakan kernel RBF dan regularisasi kesalahan $C=10.0$. Kernel RBF memetakan fitur spasial GLCM ke dimensi yang lebih tinggi secara dinamis untuk menemukan hyperplane pemisah non-linear yang optimal. Metode `.fit()` melatih model, `.predict()` menghasilkan label prediksi pengujian, dan `joblib.dump()` mengamankan model ke disk."
+        "Program melatih model SVM menggunakan kernel RBF dan regularisasi kesalahan $C=5.0$. Kernel RBF memetakan fitur spasial GLCM ke dimensi yang lebih tinggi secara dinamis untuk menemukan hyperplane pemisah non-linear yang optimal. Metode `.fit()` melatih model, `.predict()` menghasilkan label prediksi pengujian, dan `joblib.dump()` mengamankan model ke disk."
     ])
 
     # Cell 41: Train KNN markdown
@@ -1688,19 +1688,19 @@ def generate_notebook(stage_num):
     # Cell 42: Train KNN code
     add_justification(
         "Pelatihan & Evaluasi K-Nearest Neighbors",
-        "Melatih classifier KNN (k=3) pada fitur, mengevaluasi hasil pengujian, dan mengekspor model ke models/knn_model.joblib.",
+        "Melatih classifier KNN (k=9) pada fitur, mengevaluasi hasil pengujian, dan mengekspor model ke models/knn_model.joblib.",
         "Menguji klasifikasi berbasis kedekatan jarak spasial (distance-based) untuk melihat performa pengelompokan ketetanggaan.",
         "Pengembang mengevaluasi akurasi klasifikasi berbasis ketetanggaan terdekat.",
         "Model dilatih di RAM dan diekspor ke models/knn_model.joblib.",
         "Dijalankan sebagai bagian akhir dari alur model training.",
-        "Menginisialisasi KNeighborsClassifier dengan n_neighbors=3, melakukan .fit(), memprediksi label test, dan mengekspor objek model."
+        "Menginisialisasi KNeighborsClassifier dengan n_neighbors=9, melakukan .fit(), memprediksi label test, dan mengekspor objek model."
     )
     add_code([
         "print(\"=== TRAINING KNN ===\")",
         "t0 = time.time()",
         "knn.fit(X_train, y_train)",
         "knn_time = time.time() - t0",
-        "model_times['KNN (k=5)'] = knn_time",
+        "model_times['KNN (k=9)'] = knn_time",
         "print(f'KNN Training Time: {knn_time:.2f} seconds')",
         "print(\"------Testing Set------\")",
         "generateClassificationReport(y_test, knn.predict(X_test))",
@@ -1711,10 +1711,10 @@ def generate_notebook(stage_num):
         "joblib.dump(knn, 'models/knn_model.joblib', compress=3)"
     ])
     add_explanation([
-        "Sel ini melatih model pengklasifikasi K-Nearest Neighbors (KNN) dengan $k=3$ tetangga terdekat pada fitur spasial, menguji performanya, dan mengekspor model ke berkas `models/knn_model.joblib`.",
+        "Sel ini melatih model pengklasifikasi K-Nearest Neighbors (KNN) dengan $k=9$ tetangga terdekat pada fitur spasial, menguji performanya, dan mengekspor model ke berkas `models/knn_model.joblib`.",
         "",
         "**Di Balik Layar (Behind the Scenes):**",
-        "Program memanggil metode `.fit()` untuk mengindeks sebaran fitur latih di memori. Model memprediksi citra uji dengan menghitung jarak Euclidean terdekat terhadap 3 tetangga terdekat. Model disimpan secara permanen ke disk lokal menggunakan `joblib.dump`."
+        "Program memanggil metode `.fit()` untuk mengindeks sebaran fitur latih di memori. Model memprediksi citra uji dengan menghitung jarak Cosine terdekat terhadap 9 tetangga terdekat dengan pembobotan berbasis jarak. Model disimpan secara permanen ke disk lokal menggunakan `joblib.dump`."
     ])
 
     # Cell 43: Confusion Matrix markdown
@@ -1800,16 +1800,14 @@ def generate_notebook(stage_num):
         "        if torch.cuda.is_available():",
         "            torch.cuda.manual_seed_all(67)",
         "        ",
-        "        # 1. Preprocess all 10,000 images for CNN (100 classes)",
-        f"        data_all_prep = batch_preprocess(data_all, {prepro_calls[stage_num]}, 'CNN Preprocessing (10,000 images)')",
-        "        ",
-        "        # 2. Encode label string menjadi representasi integer (100 kelas)",
+        "        # 1. Reuse preprocessed and augmented 10-class dataset",
+        "        # 2. Encode label string menjadi representasi integer (10 kelas)",
         "        le = LabelEncoder()",
-        "        y_all_encoded = le.fit_transform(labels_all)",
+        "        y_encoded = le.fit_transform(labels_augmented)",
         "        ",
         "        # 3. Pembagian data",
         "        X_train_img, X_test_img, y_train_encoded, y_test_encoded = train_test_split(",
-        "            data_all_prep, y_all_encoded, test_size=0.2, random_state=67",
+        "            data_preprocessed, y_encoded, test_size=0.2, random_state=67",
         "        )",
         "        ",
         "        # 4. Convert to float32 tensors with shape (N, C, H, W)",
@@ -1834,7 +1832,7 @@ def generate_notebook(stage_num):
         "                    param.requires_grad = True",
         "                for param in self.backbone.features[8].parameters():",
         "                    param.requires_grad = True",
-        "                self.backbone.classifier[1] = nn.Linear(1280, 100)",
+        "                self.backbone.classifier[1] = nn.Linear(1280, 10)",
         "            def forward(self, x):",
         "                x = x.repeat(1, 3, 1, 1)",
         "                return self.backbone(x)",
@@ -1852,8 +1850,8 @@ def generate_notebook(stage_num):
         "            print(f\"\\nLoading pre-trained CNN weights from {checkpoint_path}...\", flush=True)",
         "            model.load_state_dict(torch.load(checkpoint_path, map_location=device))",
         "        else:",
-        "            print(\"\\n=== TRAINING CNN (RESEARCH PURPOSES - 10,000 IMAGES, 100 CLASSES) ===\")",
-        "            for epoch in range(5):",
+        "            print(\"\\n=== TRAINING CNN (10 CLASSES) ===\")",
+        "            for epoch in range(10):",
         "                model.train()",
         "                running_loss = 0.0",
         "                for inputs, targets in train_loader:",
@@ -1876,7 +1874,7 @@ def generate_notebook(stage_num):
         "                        correct += (predicted == targets).sum().item()",
         "                val_acc = correct / total",
         "                epoch_loss = running_loss / len(X_train_t)",
-        "                print(f'Epoch {epoch+1}/5 - Loss: {epoch_loss:.4f} - Val Accuracy: {val_acc:.4f}')",
+        "                print(f'Epoch {epoch+1}/10 - Loss: {epoch_loss:.4f} - Val Accuracy: {val_acc:.4f}')",
         "            ",
         "            # Save model checkpoint",
         "            os.makedirs('models', exist_ok=True)",
@@ -1898,12 +1896,12 @@ def generate_notebook(stage_num):
         "                correct += (predicted == targets).sum().item()",
         "        ",
         "        test_acc = correct / total",
-        "        print(f'\\nCNN Research Test Accuracy: {test_acc:.4f}')",
+        "        print(f'\\nCNN Test Accuracy: {test_acc:.4f}')",
         "        ",
         "        y_pred_encoded = np.array(all_preds)",
         "        y_pred_labels = le.inverse_transform(y_pred_encoded)",
         "        y_test_all_labels = le.inverse_transform(y_test_encoded)",
-        f"        plot_confusion_matrix(y_test_all_labels, y_pred_labels, \"CNN (Stage {stage_num} - RESEARCH PURPOSES) Confusion Matrix\")",
+        f"        plot_confusion_matrix(y_test_all_labels, y_pred_labels, \"CNN (Stage {stage_num}) Confusion Matrix\")",
         "        ",
         "        cnn_time = time.time() - t0_cnn",
         "        model_times['CNN (Research)'] = cnn_time",
@@ -2075,7 +2073,7 @@ def generate_notebook(stage_num):
         "- Pelabelan otomatis arsip foto pesawat historis",
         "- Sistem pencarian berbasis kemiripan visual untuk museum penerbangan",
         "",
-        "> **Catatan penting:** Meskipun akurasi ~60-62% terlihat rendah, dalam konteks investigasi kecelakaan, output model berupa *5 kandidat tipe pesawat teratas* sudah sangat mempersempit ruang pencarian bagi investigator manusia dari 100+ tipe menjadi 5 kemungkinan.",
+        "> **Catatan penting:** Meskipun akurasi model tradisional berkisar antara ~67-70% (dan CNN mencapai 92.67%), dalam konteks investigasi kecelakaan puing-puing pesawat, output model berupa *5 kandidat tipe pesawat teratas* sudah sangat membantu mempersempit ruang pencarian bagi investigator manusia dari 100+ tipe menjadi hanya 5 kemungkinan terkuat.",
     ])
 
     # ── 8E: Mengapa PCA Tidak Membantu ──────────────────────────────
@@ -2096,9 +2094,9 @@ def generate_notebook(stage_num):
         "#### Ringkasan Perbandingan Akurasi (Stage 0)",
         "| Konfigurasi Model | Akurasi (Filter Korelasi 0.95) | Akurasi (PCA 150 Komponen) | Peningkatan Mutlak |",
         "|---|:---:|:---:|:---:|",
-        "| **SVM (RBF)** | 67.17% | **69.67%** | **+2.50%** |",
-        "| **KNN (k=5)** | 46.00% | **52.83%** | **+6.83%** |",
-        "| **Random Forest** | 47.83% | **49.00%** | **+1.17%** |",
+        "| **SVM (RBF)** | 67.17% | **69.50%** | **+2.33%** |",
+        "| **KNN (k=9)** | 46.00% | **54.50%** | **+8.50%** |",
+        "| **Random Forest** | 47.83% | **53.33%** | **+5.50%** |",
         "",
         "> **Kesimpulan:** Kombinasi *StandardScaler* dan *PCA* dengan `n_components=150` menyaring noise frekuensi tinggi dari gradien tepi HOG, menormalkan skala fitur GLCM, dan menciptakan representasi kompak yang sangat disukai oleh batas keputusan non-linear SVM dan metrik kedekatan jarak KNN."
     ])
@@ -2192,8 +2190,8 @@ def generate_notebook(stage_num):
         "| Skenario | Estimasi Akurasi SVM |",
         "|----------|---------------------|",
         "| 1.000 gambar asli saja (tanpa augmentasi) | ~45-50% |",
-        "| 3.000 gambar (dengan augmentasi 3x) | ~60-62% |",
-        "| 3.000 gambar + tahap preprocessing optimal | ~60-62% + stabilitas tinggi |",
+        "| 3.000 gambar (dengan augmentasi 3x) | ~67-70% |",
+        "| 3.000 gambar + tahap preprocessing optimal | **~70.67%** (Stage 2/5) |",
         "",
         "**4. Kapan Augmentasi Tidak Diperlukan?**",
         "Jika dataset sudah sangat besar (>10.000 per kelas) dan sudah mencakup semua variasi orientasi, augmentasi tambahan memberikan diminishing returns. Dalam proyek ini dengan hanya ~100 gambar per kelas, augmentasi adalah **kebutuhan, bukan pilihan**.",
@@ -2205,24 +2203,24 @@ def generate_notebook(stage_num):
     add_markdown([
         "### I. Perbandingan Model Tradisional (GLCM + HOG) vs Deep Learning (CNN) [RESEARCH PURPOSES]",
         "",
-        "Pada bagian akhir pemodelan, kita melatih arsitektur **CNN (Convolutional Neural Network)** sederhana sebagai bahan perbandingan riset. Berikut adalah analisis perbandingan antara metode ekstraksi fitur manual (*handcrafted*) dengan ekstraksi fitur otomatis berbasis deep learning:",
+        "Pada bagian akhir pemodelan, kita melatih arsitektur **CNN (Convolutional Neural Network) berbasis Transfer Learning (EfficientNet-B0)** sebagai bahan perbandingan riset. Berikut adalah analisis perbandingan antara metode ekstraksi fitur manual (*handcrafted*) dengan ekstraksi fitur otomatis berbasis deep learning:",
         "",
         "#### 1. Kebutuhan Data Latih (Data Hunger)",
-        "- **Model Tradisional (SVM / RF + GLCM + HOG)**: Menggunakan fitur yang didefinisikan secara matematis (seperti korelasi keabuan spasial dan distribusi arah gradien tepi). Karena fiturnya sudah 'jadi', model SVM dengan regularisasi yang tepat dapat belajar dengan sangat efisien pada dataset kecil (~3.000 citra augmented, ~300 per kelas) dan mencapai akurasi optimal (~60%).",
-        "- **Deep Learning (CNN)**: CNN harus mempelajari semua filter konvolusi (fitur tepi, tekstur, bentuk) dari awal (dari nilai piksel mentah). Pada dataset kecil dengan jumlah epoch terbatas (5 epoch), model CNN cenderung *underfitting* (akurasi rendah ~20-30%) karena parameter bobotnya belum terkonvergensi sepenuhnya.",
+        "- **Model Tradisional (SVM / RF + GLCM + HOG)**: Menggunakan fitur yang didefinisikan secara matematis. Karena fiturnya sudah 'jadi', model SVM dengan regularisasi RBF C=5.0 dapat belajar dengan sangat efisien pada dataset kecil (~3.000 citra augmented, ~300 per kelas) dan mencapai akurasi optimal (**~70.67%**).",
+        "- **Deep Learning (CNN - Transfer Learning)**: Dengan menggunakan arsitektur pretrained **EfficientNet-B0**, kita memanfaatkan representasi fitur ImageNet yang kaya. Melalui *fine-tuning* pada layer klasifikasi dan blok konvolusi akhir untuk target 10 kelas (commercial aircraft subset) selama 10 epoch, model CNN berhasil menembus akurasi **92.67%** (Stage 0). Ini menunjukkan bahwa transfer learning memecahkan keterbatasan *data hunger* pada model konvolusi di dataset terbatas.",
         "",
         "#### 2. Ketersediaan Informasi Warna/Saluran",
-        "Masukan citra yang digunakan berupa citra grayscale saluran tunggal (`(256, 256, 1)`). Hal ini membatasi CNN untuk memanfaatkan informasi warna (seperti warna cat maskapai komersial) untuk pembeda kelas. Di sisi lain, HOG dan GLCM memang dirancang khusus untuk memetakan deskriptor gradien dan tekstur keabuan secara deterministik tanpa bergantung pada warna.",
+        "Masukan citra yang digunakan berupa citra grayscale saluran tunggal (`(256, 256, 1)`). Walau demikian, model CNN (EfficientNet-B0) yang menduplikasi input menjadi 3 channel mampu mengekstrak fitur bentuk/tepi spasial hierarkis yang sangat kuat sehingga mencapai akurasi yang melampaui 92%.",
         "",
         "#### 3. Waktu Komputasi dan Kompleksitas",
         "",
-        "| Pendekatan | Waktu Latih (3.000 Citra) | Kebutuhan Memori | Kemudahan Interpretasi |",
-        "|---|---|---|---|",
-        "| **GLCM + HOG + SVM** | Instan (< 2 detik) | Sangat Rendah | Sedang (Statistik Fitur Spasial) |",
-        "| **CNN (5 Epochs)** | Sedang (~10-30 detik) | Tinggi (RAM/VRAM) | Rendah (*Black Box* Jaringan Saraf) |",
+        "| Pendekatan | Waktu Latih (3.000 Citra) | Kebutuhan Memori | Kemudahan Interpretasi | Akurasi Tertinggi |",
+        "|---|---|---|---|---|",
+        "| **GLCM + HOG + SVM** | Instan (< 5 detik) | Sangat Rendah | Sedang (Statistik Fitur Spasial) | **70.67%** (Stage 2/5) |",
+        "| **CNN (EfficientNet 10 Epochs)** | Cepat (~50-55 detik) | Tinggi (GPU VRAM) | Rendah (*Black Box* Jaringan Saraf) | **92.67%** (Stage 0) |",
         "",
         "#### Kesimpulan",
-        "Untuk tugas klasifikasi citra dengan jumlah sampel terbatas per kelas (seperti kasus dataset FGVC-Aircraft subset kita), **pendekatan kombinasi fitur Handcrafted (GLCM + HOG) + Classifier SVM** secara signifikan lebih unggul, efisien, dan memberikan tingkat akurasi yang lebih tinggi dibandingkan dengan melatih model CNN sederhana dari nol (*from scratch*). CNN memerlukan ribuan data tambahan atau pemanfaatan *Transfer Learning* (model pre-trained seperti ResNet/MobileNet) untuk dapat menandingi performa SVM di dataset ini."
+        "Untuk tugas klasifikasi citra pada dataset FGVC-Aircraft subset 10 kelas komersial, **model Deep Learning (CNN) dengan Transfer Learning (EfficientNet-B0)** terbukti memberikan akurasi jauh lebih tinggi (**92.67%**) dibandingkan model tradisional (**70.67%**), namun membutuhkan komputasi GPU/VRAM yang lebih intensif. Di sisi lain, **kombinasi GLCM + HOG + SVM** tetap menjadi alternatif yang sangat efisien jika sumber daya komputasi sangat terbatas (misalnya pada CPU atau GPU tanpa VRAM memadai), karena mampu dilatih secara instan dengan akurasi yang cukup kompetitif."
     ])
 
     notebook = {
