@@ -25,6 +25,68 @@ Pada proyek PCD ini, kami melakukan eksperimen klasifikasi citra pesawat terbang
 
 Eksperimen ini mengevaluasi kinerja model pada **10 kelas pesawat terbang komersial** (1.000 citra total, diaugmentasikan menjadi 3.000 citra) dengan akselerasi perangkat keras GPU (CuPy) untuk mempercepat proses komputasi. Sebagai bahan perbandingan riset (RESEARCH PURPOSES), setiap notebook juga dilengkapi dengan implementasi klasifikasi Convolutional Neural Network (CNN).
 
+### Pipeline Architecture
+```mermaid
+graph TD
+    %% Styling
+    classDef main fill:#2c3e50,stroke:#34495e,stroke-width:2px,color:#fff;
+    classDef prep fill:#9b59b6,stroke:#8e44ad,stroke-width:2px,color:#fff;
+    classDef hand fill:#3498db,stroke:#2980b9,stroke-width:2px,color:#fff;
+    classDef deep fill:#e74c3c,stroke:#c0392b,stroke-width:2px,color:#fff;
+    classDef ml fill:#2ecc71,stroke:#27ae60,stroke-width:2px,color:#fff;
+
+    subgraph Input ["1. Data Acquisition & Augmentation"]
+        A["FGVC-Aircraft CSVs"] --> B["Diverse 10-Class Subset - 1,000 Images"]
+        B --> C["Data Augmentation - Horizontal Flip & Rotate 15 degrees CCW"]
+        C --> D["Grayscale Resize to 256x256 - 3,000 Images Total"]
+    end
+    class A,B,C,D Input;
+
+    subgraph Preprocessing ["2. Preprocessing Stages"]
+        D --> E["Image Filters - Denoising, Contrast, Sharpening"]
+    end
+    class E Preprocessing;
+
+    subgraph Paths ["3. Feature Extraction Pathways"]
+        E --> F["Handcrafted Feature Extraction"]
+        E --> G["Deep Feature Extraction - CNN"]
+        
+        F --> F1["GLCM (56 features) - Micro-Texture"]
+        F --> F2["HOG (4,356 features) - Global Shape"]
+        F1 & F2 --> F3["Hybrid Features - 4,412 dimensions"]
+        
+        G --> G1["Fine-tuned EfficientNet-B0 - Transfer Learning"]
+        G1 --> G2["Global Avg Pool layer"]
+        G2 --> G3["Deep Embeddings - 1,280 dimensions"]
+    end
+    class F,F1,F2,F3 Paths;
+    class G,G1,G2,G3 Paths;
+
+    subgraph Classification ["4. Modeling & Classification"]
+        F3 --> H["Z-score Scaling & PCA 150 components"]
+        H --> I["Traditional ML Models - Random Forest, SVM RBF, KNN"]
+        
+        G1 --> J["CNN Classifier Head - Linear Layer"]
+        G3 --> K["Lazy Learners on CNN Embeddings - SVM, KNN, RF"]
+    end
+    class H,I Classification;
+    class J,K Classification;
+
+    subgraph Evaluation ["5. Performance & Metrics"]
+        I --> L["Handcrafted ML Accuracy - Best: 70.67%"]
+        J --> M["CNN Research Accuracy - Best: 92.67%"]
+        K --> N["Experimental CNN Embeds Accuracy - Best Overall: 93.67%"]
+    end
+    class L,M,N Evaluation;
+
+    %% Class assignment
+    class A,B,C,D main;
+    class E prep;
+    class F,F1,F2,F3,H,I,L hand;
+    class G,G1,G2,G3,J,M deep;
+    class K,N ml;
+```
+
 ---
 
 # 🚀 Quick Launch (Google Colab)
@@ -79,6 +141,11 @@ Pastikan Anda menggunakan Python 3.12 (dikelola melalui Scoop atau package manag
      .\run_notebook_in_wsl.ps1 -notebooks all
      ```
 4. **Eksekusi Manual**: Jalankan editor Jupyter Notebook atau VS Code, buka file notebook pilihan Anda (misalnya `Stage2_AeroVision.ipynb`), pilih kernel Python 3.12, dan jalankan sel kode satu per satu.
+5. **Memperbarui Penjelasan/Markdown Tanpa Menghapus Output**: Jika Anda memodifikasi penjelasan teori/teks pada generator `create_aerovision_notebook.py` dan ingin menyinkronkan seluruh penjelasan di notebook tanpa menghapus/menghilangkan hasil output running sel code yang sudah berjalan lama, jalankan:
+   ```powershell
+   python312 update_notebook_explanations.py
+   ```
+   Skrip ini secara otomatis membackup notebook yang ada, men-generate template baru, dan memulihkan kembali output eksekusi sel code lama secara transparan.
 
 ---
 
@@ -113,6 +180,51 @@ Kami memisahkan eksperimen menjadi delapan tahap preprocessing untuk mengevaluas
 - **Stage 6 (Bilateral Filter)**: Menggunakan **Bilateral Filter** untuk smoothing adaptif yang menjaga batas tepi bodi pesawat tetap tegas, diikuti dengan **CLAHE** dan **Unsharp Masking**.
 - **Stage 7 (Wavelet Denoise)**: Menerapkan **Wavelet Denoising** dengan soft thresholding level 2 pada domain frekuensi wavelet untuk reduksi noise multi-skala, lalu ditingkatkan kontrasnya dengan **CLAHE** dan dipertegas kembali dengan filter penajam.
 
+### Preprocessing Workflow Flowchart
+```mermaid
+graph TD
+    %% Styling
+    classDef base fill:#7f8c8d,stroke:#95a5a6,stroke-width:2px,color:#fff;
+    classDef stage fill:#9b59b6,stroke:#8e44ad,stroke-width:2px,color:#fff;
+    classDef advanced fill:#d35400,stroke:#e67e22,stroke-width:2px,color:#fff;
+
+    Start["Original Input Images"] --> S0["Stage 0: Baseline - Resize Only"]
+    Start --> S1["Stage 1: Noise Reduction"]
+    
+    S1 --> S1_G["Gaussian Blur (kernel=3)"]
+    S1_G --> S1_M["Median Blur (kernel=3)"]
+    
+    S1_M --> S2["Stage 2: Contrast Enhancement"]
+    S2 --> S2_C["CLAHE (clip=1.5)"]
+    S2_C --> S2_G["Gamma Correction (gamma=0.8)"]
+    
+    S2_G --> S3["Stage 3: Detail & Edge Enhancement"]
+    S3 --> S3_U["Unsharp Masking (sigma=1.0, strength=1.5)"]
+    S3_U --> S3_S["Sharpening Convolution"]
+    
+    Start --> S4["Stage 4: Edge-Preserving Denoising"]
+    S4 --> S4_NL["NLMeans Denoising (h=10)"]
+    S4_NL --> S4_CS["Contrast Stretching (2% to 98%)"]
+    
+    Start --> S5["Stage 5: Morphological Structural Enhancement"]
+    S5 --> S5_O["Morphological Opening (ksize=3)"]
+    S5_O --> S5_C["CLAHE (clip=2.0)"]
+    
+    Start --> S6["Stage 6: Bilateral Smoothing"]
+    S6 --> S6_B["Bilateral Filter (d=9, sigma=75)"]
+    S6_B --> S6_C["CLAHE (clip=2.0)"]
+    S6_C --> S6_U["Unsharp Masking (sigma=1.0, strength=1.5)"]
+    
+    Start --> S7["Stage 7: Wavelet-Domain Denoising"]
+    S7 --> S7_W["Wavelet Denoising (Level 2 soft)"]
+    S7_W --> S7_C["CLAHE (clip=2.0)"]
+    S7_C --> S7_S["Sharpening Convolution"]
+
+    class S0 base;
+    class S1,S2,S3 stage;
+    class S4,S5,S6,S7 advanced;
+```
+
 Setiap notebook memplot perbandingan Sebelum (Original Grayscale) dan Sesudah (Preprocessed) secara berdampingan untuk satu sampel dari masing-masing 10 kelas pesawat.
 
 Berikut adalah contoh visualisasi Sebelum vs Sesudah preprocessing pada beberapa tahap:
@@ -146,6 +258,43 @@ Alih-alih hanya menggunakan fitur tekstur GLCM, proyek ini menerapkan pendekatan
 2. **HOG**: Citra di-resize ke ukuran $96 \times 96$ piksel. Kemudian, HOG descriptor dihitung menggunakan orientasi gradien 9, piksel per sel 8, dan sel per blok 2 (menghasilkan 4.356 fitur bentuk).
 3. **Hybrid**: Menggabungkan fitur GLCM dan HOG secara horizontal menjadi **4.412 fitur hybrid** per citra.
 
+### Hybrid Feature Extraction Pipeline
+```mermaid
+graph TD
+    %% Styling
+    classDef img fill:#2c3e50,stroke:#34495e,stroke-width:2px,color:#fff;
+    classDef glcm fill:#3498db,stroke:#2980b9,stroke-width:2px,color:#fff;
+    classDef hog fill:#9b59b6,stroke:#8e44ad,stroke-width:2px,color:#fff;
+    classDef concat fill:#2ecc71,stroke:#27ae60,stroke-width:2px,color:#fff;
+
+    InputImage["Preprocessed Image (256x256)"] --> GLCMPath["GLCM Pathway"]
+    InputImage --> HOGPath["HOG Pathway"]
+
+    subgraph GLCM ["GLCM Feature Extraction - 56 Dimensions"]
+        GLCMPath --> Q["32-Level Gray-Level Quantization"]
+        Q --> Calc["Compute symmetric GLCM matrices - Distances: 1 and 2, Angles: 0, 45, 90, 135 degrees"]
+        Calc --> Stats["Extract 7 Haralick Statistics - Contrast, Homogeneity, Dissimilarity, Energy, Entropy, Correlation, ASM"]
+        Stats --> OutGLCM["56 Texture Features"]
+    end
+
+    subgraph HOG ["HOG Feature Extraction - 4,356 Dimensions"]
+        HOGPath --> Resize["Downsample image to 96x96"]
+        Resize --> Grad["Compute local intensity gradients (dx, dy)"]
+        Grad --> Cells["Compute orientation histograms (8x8 Pixels/Cell, 9 bins)"]
+        Cells --> Blocks["Normalize contrast across blocks (2x2 Cells/Block, step=1)"]
+        Blocks --> OutHOG["4,356 Shape/Edge Features"]
+    end
+
+    OutGLCM --> Concatenate["Concatenate Features (Axis 1)"]
+    OutHOG --> Concatenate
+    Concatenate --> Output["Hybrid Feature Vector - 4,412 Dimensions"]
+
+    class InputImage img;
+    class GLCM,Q,Calc,Stats,OutGLCM glcm;
+    class HOG,Resize,Grad,Cells,Blocks,OutHOG hog;
+    class Concatenate,Output concat;
+```
+
 ---
 
 # V. Reduksi Dimensi Fitur
@@ -177,19 +326,56 @@ Kami melatih tiga model klasifikasi utama (Random Forest, SVM, dan KNN) mengguna
 - **KNN**: Menggunakan `k=9` dengan metrik `cosine` dan pembobotan jarak (`weights='distance'`).
 - **CNN (Research)**: Model PyTorch berbasis **EfficientNet-B0** pretrained. Input grayscale saluran tunggal diulang menjadi 3 channel, backbone dibekukan sebagian besar (kecuali blok akhir 7-8 yang di-fine-tune), dan output classifier diselaraskan menjadi 10 kelas. Model dilatih selama 10 epoch pada dataset komersial 10 kelas (3.000 citra augmented), menghasilkan konvergensi yang sangat tinggi.
 
-### Hasil Akurasi Eksperimen (Mode: `diverse_subset` - 10 Kelas Komersial, 32 Levels Quantization, Hybrid GLCM + HOG)
-| Preprocessing Stage | Random Forest | SVM (RBF Kernel) | KNN (k=9, cosine) | CNN (EfficientNet-B0, 10 Epochs)* |
-|---|---|---|---|---|
-| **Stage 0 (No Preprocessing / Resize)** | 53.33% | 69.50% | 54.50% | **92.67%** |
-| **Stage 1 (Noise Blur)** | 50.50% | 68.83% | 54.50% | **89.50%** |
-| **Stage 2 (Noise + Contrast)** | 50.33% | **70.67%** | **57.50%** | **91.50%** |
-| **Stage 3 (Noise + Contrast + Edge)** | 46.83% | 66.67% | 54.00% | **92.17%** |
-| **Stage 4 (NLMeans + Contrast Stretch)** | 49.50% | 68.33% | 53.17% | **90.50%** |
-| **Stage 5 (Morph Opening + CLAHE)** | 51.17% | **70.67%** | 56.83% | **90.83%** |
-| **Stage 6 (Bilateral + CLAHE + Unsharp)** | 47.83% | 69.33% | 55.17% | **89.33%** |
-| **Stage 7 (Wavelet + CLAHE + Sharpen)** | 46.83% | 67.00% | 50.67% | **89.83%** |
+### CNN & Deep Embeddings Classification Pathways
+```mermaid
+graph TD
+    %% Styling
+    classDef input fill:#2c3e50,stroke:#34495e,stroke-width:2px,color:#fff;
+    classDef backbone fill:#e74c3c,stroke:#c0392b,stroke-width:2px,color:#fff;
+    classDef traditional fill:#3498db,stroke:#2980b9,stroke-width:2px,color:#fff;
+    classDef output fill:#2ecc71,stroke:#27ae60,stroke-width:2px,color:#fff;
 
-*Analisis Akurasi: Hasil eksekusi terbaru menunjukkan penyelarasan target kelas CNN menjadi 10 kelas komersial serta penambahan latihan menjadi 10 epoch berhasil mendongkrak performa CNN hingga mencapai puncak akurasi **92.67%** pada Stage 0 dan **92.17%** pada Stage 3. Untuk model tradisional, SVM tetap menjadi model paling stabil pada seluruh stage, mencapai akurasi terbaiknya sebesar **70.67%** pada Stage 2 dan Stage 5.*
+    Img["Preprocessed Image (256x256, Grayscale)"] --> Dupl["Duplicate Grayscale to 3-Channel RGB (256x256x3)"]
+    Dupl --> Backbone["EfficientNet-B0 Backbone (Pretrained ImageNet weights)"]
+
+    subgraph CNN_Path ["Jalur 1: CNN Research Classifier"]
+        Backbone --> Unfrozen["Fine-tuned Convolutional Blocks (Blocks 7 and 8)"]
+        Unfrozen --> Classifier["Linear Output Classifier Layer"]
+        Classifier --> CNN_Pred["10-Class Classification Output - Accuracy: ~92.67%"]
+    end
+
+    subgraph Embeds_Path ["Jalur 2: CNN Embeddings + Lazy Learners (EXPERIMENTAL)"]
+        Backbone --> AvgPool["Global Average Pooling Layer"]
+        AvgPool --> Embeds["1280-dim Feature Embedding"]
+        
+        Embeds --> SVM["SVM (RBF Kernel) C=5.0"]
+        Embeds --> KNN["KNN (k=9) Cosine distance"]
+        Embeds --> RF["Random Forest (150 Trees)"]
+        
+        SVM --> SVM_Pred["SVM Predictions - Accuracy: 93.67% (BEST OVERALL)"]
+        KNN --> KNN_Pred["KNN Predictions - Accuracy: 93.00%"]
+        RF --> RF_Pred["RF Predictions - Accuracy: 91.67%"]
+    end
+
+    class Img,Dupl input;
+    class Backbone,Unfrozen,Classifier,AvgPool,Embeds backbone;
+    class SVM,KNN,RF traditional;
+    class CNN_Pred,SVM_Pred,KNN_Pred,RF_Pred output;
+```
+
+### Hasil Akurasi Eksperimen (Mode: `diverse_subset` - 10 Kelas Komersial, 32 Levels Quantization, Hybrid GLCM + HOG)
+| Preprocessing Stage | RF (Handcrafted) | RF (CNN Embeds) | SVM (Handcrafted) | SVM (CNN Embeds) | KNN (Handcrafted) | KNN (CNN Embeds) | CNN (Research)* |
+|---|---|---|---|---|---|---|---|
+| **Stage 0 (No Preprocessing / Resize)** | 53.33% | 91.83% | 69.50% | 92.67% | 54.50% | 92.83% | **92.67%** |
+| **Stage 1 (Noise Blur)** | 50.50% | 89.67% | 68.83% | 91.50% | 54.50% | 90.00% | **89.50%** |
+| **Stage 2 (Noise + Contrast)** | 50.33% | 91.67% | 70.67% | 92.50% | 57.50% | 92.00% | **91.50%** |
+| **Stage 3 (Noise + Contrast + Edge)** | 46.83% | 91.67% | 66.67% | **93.67%** | 54.00% | 93.00% | **92.17%** |
+| **Stage 4 (NLMeans + Contrast Stretch)** | 49.50% | 91.17% | 68.33% | 91.00% | 53.17% | 91.67% | **90.50%** |
+| **Stage 5 (Morph Opening + CLAHE)** | 51.17% | 90.33% | 70.67% | 91.83% | 56.83% | 91.17% | **90.83%** |
+| **Stage 6 (Bilateral + CLAHE + Unsharp)** | 47.83% | 88.17% | 69.33% | 90.67% | 55.17% | 89.67% | **89.33%** |
+| **Stage 7 (Wavelet + CLAHE + Sharpen)** | 46.83% | 88.83% | 67.00% | 90.00% | 50.67% | 88.83% | **89.83%** |
+
+*Analisis Akurasi: Hasil eksekusi terbaru menunjukkan bahwa ketika model tradisional (lazy learners) dilatih menggunakan **CNN Embeddings (1280-dimensi)**, performa mereka meningkat secara dramatis (mengalami "smartening" hingga >90% akurasi). Puncak akurasi tertinggi diraih oleh **SVM (CNN Embeds) pada Stage 3 (Noise + Contrast + Edge) sebesar 93.67%**, yang melampaui model CNN murni (92.17% pada stage yang sama). Untuk fitur handcrafted GLCM+HOG, SVM RBF tetap menjadi pengklasifikasi paling stabil dengan akurasi terbaik sebesar **70.67%** pada Stage 2 dan Stage 5.*
 
 Hasil fitur setiap stage disimpan sebagai artefak terkompresi di folder `results/` dengan pola nama `result_extract_stage_X.csv.gz`. Jika file stage sudah ada, notebook melewati proses penulisan ulang.
 
@@ -210,16 +396,23 @@ Hasil fitur setiap stage disimpan sebagai artefak terkompresi di folder `results
 # VIII. Evaluasi dengan Confusion Matrix
 Setiap model dievaluasi untuk melihat tingkat keberhasilan pengelompokan prediksi benar vs salah. Visualisasi matriks kebingungan diatur agar tidak menampilkan angka kuantitatif mentah (`include_values=False`) untuk mencegah teks yang saling bertumpuk dan tidak rapi pada sel grid.
 
-Model tradisional terbaik pada eksekusi terbaru adalah **SVM RBF pada Stage 5** dengan akurasi **70.67%**, sedangkan model deep learning terbaik adalah **CNN (EfficientNet-B0) pada Stage 0** dengan akurasi **92.67%**.
+- **Model Tradisional (Handcrafted HOG+GLCM) Terbaik**: **SVM RBF pada Stage 2 & Stage 5** dengan akurasi **70.67%**.
+- **Model Deep Learning (Research) Terbaik**: **CNN (EfficientNet-B0) pada Stage 0 & Stage 3** dengan akurasi **92.67%** & **92.17%**.
+- **Model Eksperimental (CNN Embeds + Traditional ML) Terbaik**: **SVM (CNN Embeds) pada Stage 3** dengan akurasi tertinggi keseluruhan proyek sebesar **93.67%**.
 
-Berikut adalah visualisasi confusion matrix untuk kedua model terbaik tersebut:
+Berikut adalah visualisasi confusion matrix untuk model-model terbaik tersebut:
 
-#### CNN (Stage 0) Confusion Matrix
+#### SVM (CNN Embeds - Stage 3) Confusion Matrix (Best Overall: 93.67%)
+<p align="center">
+  <img src="assets/svm_stage3_cnn_embeds_confusion_matrix.png" alt="SVM CNN Embeddings Stage 3 Confusion Matrix" />
+</p>
+
+#### CNN (Stage 0) Confusion Matrix (Best CNN: 92.67%)
 <p align="center">
   <img src="assets/cnn_stage0_confusion_matrix.png" alt="CNN Stage 0 Confusion Matrix" />
 </p>
 
-#### SVM (Stage 5) Confusion Matrix
+#### SVM (Handcrafted - Stage 5) Confusion Matrix (Best Handcrafted: 70.67%)
 <p align="center">
   <img src="assets/svm_stage5_confusion_matrix.png" alt="SVM Stage 5 Confusion Matrix" />
 </p>
@@ -365,9 +558,25 @@ Masukan citra yang digunakan berupa citra grayscale saluran tunggal (`(256, 256,
 |---|---|---|---|---|
 | **GLCM + HOG + SVM** | Instan (< 5 detik) | Sangat Rendah | Sedang (Statistik Fitur Spasial) | **70.67%** (Stage 2/5) |
 | **CNN (EfficientNet 10 Epochs)** | Cepat (~50-55 detik) | Tinggi (GPU VRAM) | Rendah (*Black Box* Jaringan Saraf) | **92.67%** (Stage 0) |
+| **CNN Embeddings + SVM [EXPERIMENTAL]** | Instan (< 2 detik)* | Sangat Rendah* | Rendah (*Black Box* Jaringan Saraf) | **93.67%** (Stage 3) |
+
+*\*Catatan: Waktu latih dan memori dihitung setelah fitur embedding selesai diekstraksi dari model CNN.
 
 #### Kesimpulan
 Untuk tugas klasifikasi citra pada dataset FGVC-Aircraft subset 10 kelas komersial, **model Deep Learning (CNN) dengan Transfer Learning (EfficientNet-B0)** terbukti memberikan akurasi jauh lebih tinggi (**92.67%**) dibandingkan model tradisional (**70.67%**), namun membutuhkan komputasi GPU/VRAM yang lebih intensif. Di sisi lain, **kombinasi GLCM + HOG + SVM** tetap menjadi alternatif yang sangat efisien jika sumber daya komputasi sangat terbatas (misalnya pada CPU atau GPU tanpa VRAM memadai), karena mampu dilatih secara instan dengan akurasi yang cukup kompetitif.
+
+---
+
+### J. [EXPERIMENTAL] Dampak Penggunaan CNN Embeddings pada Lazy Learners
+
+Berdasarkan hasil uji coba bagian eksperimental, penggunaan **CNN Embeddings (1280-dimensi)** untuk melatih model tradisional (SVM, KNN, Random Forest) memberikan hasil yang sangat menarik:
+
+1. **Peningkatan Akurasi yang Signifikan (Smartening)**:
+   Model *lazy learners* seperti SVM dan KNN yang sebelumnya hanya mencapai akurasi sekitar **~70.67%** (SVM) dan **~54.50%** (KNN) menggunakan fitur handcrafted HOG+GLCM, mengalami peningkatan performa yang dramatis saat dilatih dengan CNN Embeddings (sering kali meningkat hingga **> 85%** atau mendekati performa asli CNN). Hal ini membuktikan bahwa representasi fitur yang diekstraksi secara otomatis oleh arsitektur deep learning jauh lebih representatif dan terstruktur dengan baik dibandingkan fitur buatan tangan.
+2. **SVM dan KNN Lebih Diuntungkan**:
+   - **SVM (RBF)** sangat unggul dalam memisahkan ruang representasi 1280-dimensi dari CNN Embeddings karena margin pemisahnya dapat menemukan batas keputusan non-linear yang sangat optimal. **Bahkan, SVM (CNN Embeds) di Stage 3 mencatat akurasi tertinggi proyek ini sebesar 93.67%**, melampaui CNN murni.
+   - **KNN (Cosine)** juga mengalami lonjakan performa yang tinggi karena kemiripan fitur dalam ruang embedding CNN sangat sejalan dengan kesamaan semantik antar kelas pesawat.
+   - **Random Forest** menunjukkan peningkatan, namun terkadang sedikit tertinggal dibanding SVM karena sifat model ensemble pohon keputusan yang kurang optimal menangani ruang koordinat kontinu berdimensi sangat tinggi tanpa pembagian spasial yang eksplisit.
 
 ---
 
